@@ -40,7 +40,7 @@ Warehouse credentials are passed via environment variables, not action inputs. S
 |-------|------|---------|-------------|
 | `severity_threshold` | string | `warning` | Minimum severity to include in the review. Issues below this threshold are silently dropped. Values: `info`, `warning`, `error`, `critical`. |
 | `fail_on` | string | `none` | Fail the GitHub Actions step when issues at this severity or above are found. `none` means the step always succeeds. `error` fails on errors and criticals. `critical` fails only on criticals. |
-| `comment_mode` | string | `single` | How to post review feedback. `single` posts one summary comment on the PR. `inline` posts individual comments on changed lines. `both` does both. |
+| `comment_mode` | string | `single` | How to post review feedback. `single` posts one summary comment on the PR. `inline` posts individual comments on changed lines. `both` does both — a summary comment plus inline review comments on lines with critical issues. |
 | `max_files` | number | `50` | Maximum number of SQL files to analyze per PR. When the PR exceeds this limit, the most-changed files (by additions) are prioritized. |
 
 ### Interactive Mode
@@ -281,3 +281,110 @@ If you prefer not to receive a comment when there are no findings, set `suppress
     REDSHIFT_PASSWORD: ${{ secrets.REDSHIFT_PASSWORD }}
     REDSHIFT_DATABASE: analytics
 ```
+
+## Inline Review Comments
+
+When `comment_mode` is set to `both`, the action posts:
+
+1. **A summary comment** on the PR with the compact review table and collapsible issue groups.
+2. **Inline review comments** on the specific diff lines where critical issues were detected.
+
+Inline comments appear directly in the "Files changed" tab, making it easier to address issues without jumping between the conversation and the diff.
+
+```yaml
+- uses: AltimateAI/altimate-code-actions@v0
+  with:
+    comment_mode: both
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Only issues at `error` or `critical` severity are posted as inline comments. Lower-severity issues appear only in the summary comment.
+
+## Interactive Commands
+
+When `interactive: true` (the default), developers can trigger specific analyses by commenting on the PR. The action listens for trigger phrases configured via the `mentions` input.
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `@altimate review` | Run full SQL quality review on the current PR |
+| `@altimate impact` | Run dbt DAG impact analysis only |
+| `@altimate cost` | Run cost estimation only |
+| `@altimate help` | Reply with available commands and current configuration |
+
+Commands are case-insensitive. The trigger phrase must appear at the start of the comment or on its own line.
+
+### Workflow Setup
+
+Interactive mode requires the `issue_comment` event trigger:
+
+```yaml
+name: Altimate Interactive
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    if: contains(github.event.comment.body, '@altimate')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: AltimateAI/altimate-code-actions@v0
+        with:
+          interactive: true
+          mentions: "@altimate,/altimate,/oc"
+          mode: full
+          model: anthropic/claude-haiku-4-5-20251001
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+## SQL Rules Reference
+
+Altimate Code Actions includes 19 built-in SQL rules organized by category:
+
+### Correctness
+
+| Rule | Description |
+|------|-------------|
+| `missing-where` | DELETE or UPDATE without a WHERE clause |
+| `not-in-with-nulls` | NOT IN with a subquery that may return NULLs (always evaluates to empty) |
+| `distinct-masking-bad-join` | DISTINCT used to mask a bad JOIN that produces duplicates |
+| `no-limit-on-delete` | DELETE without LIMIT on databases that support it |
+
+### Performance
+
+| Rule | Description |
+|------|-------------|
+| `no-select-star` | SELECT * instead of enumerating columns |
+| `function-on-indexed-column` | Function applied to an indexed column, preventing index use |
+| `count-for-existence` | COUNT(*) used where EXISTS would be more efficient |
+| `order-by-in-subquery` | ORDER BY inside a subquery with no LIMIT |
+| `cartesian-join` | JOIN without a join condition |
+
+### Style
+
+| Rule | Description |
+|------|-------------|
+| `implicit-join` | Comma-separated tables instead of explicit JOIN syntax |
+| `unused-cte` | CTE defined but never referenced |
+| `ambiguous-column` | Column reference that could resolve to multiple tables |
+| `duplicate-column-alias` | Conflicting column names in a SELECT list |
+| `union-vs-union-all` | UNION where UNION ALL would suffice |
+| `schema-qualification` | Unqualified table references |
+
+### Security
+
+| Rule | Description |
+|------|-------------|
+| `pii-detected` | Column name or literal matches a PII pattern |
+
+Every rule provides a concrete **fix suggestion** in the review comment, so developers know exactly how to resolve each issue.

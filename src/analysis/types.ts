@@ -180,6 +180,13 @@ export interface DBTManifestNode {
   database?: string;
 }
 
+/** An inline review comment to post on a specific diff line. */
+export interface InlineComment {
+  path: string;
+  line: number;
+  body: string;
+}
+
 /** CLI execution result. */
 export interface CLIResult {
   exitCode: number;

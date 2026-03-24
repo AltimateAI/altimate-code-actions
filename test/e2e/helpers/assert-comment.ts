@@ -1,25 +1,19 @@
 import { expect } from "bun:test";
 
-/** Known section headings in generated PR comments. */
-const KNOWN_SECTIONS = [
-  "SQL Quality",
-  "Impact Analysis",
-  "Cost Estimation",
-  "PII Detection",
-  "Summary",
-] as const;
-
-type KnownSection = (typeof KNOWN_SECTIONS)[number];
-
 /**
- * Assert that a PR comment body contains a specific markdown section header.
- * Sections are expected as `## Section Name` or `### Section Name`.
+ * Assert that a PR comment body contains a specific section.
+ * Matches `<summary>` tags, `##`/`###` headings, and `**Bold**` labels.
  */
 export function assertCommentHasSection(
   comment: string,
-  section: KnownSection | string,
+  section: string,
 ): void {
-  const pattern = new RegExp(`^#{2,3}\\s+${escapeRegex(section)}`, "m");
+  const escaped = escapeRegex(section);
+  // Match in headings, summary tags, or bold labels
+  const pattern = new RegExp(
+    `(#{2,3}\\s+.*${escaped}|<summary>.*${escaped}|\\*\\*${escaped}\\*\\*)`,
+    "mi",
+  );
   expect(comment).toMatch(pattern);
 }
 
@@ -43,39 +37,25 @@ export function assertCommentHasSeverity(
   severity: "info" | "warning" | "error" | "critical",
 ): void {
   const markers: Record<string, string[]> = {
-    info: ["info", "informational", "note"],
-    warning: ["warning", "warn", "caution"],
-    error: ["error", "err"],
-    critical: ["critical", "fatal", "blocker"],
+    info: ["info", "\u2139\uFE0F"],
+    warning: ["warning", "\u26A0\uFE0F"],
+    error: ["error", "\u274C"],
+    critical: ["critical", "\u274C"],
   };
 
   const lower = comment.toLowerCase();
-  const found = markers[severity].some((m) => lower.includes(m));
+  const found = markers[severity].some((m) => lower.includes(m.toLowerCase()));
   expect(found).toBe(true);
 }
 
 /**
  * Validate the overall markdown structure of a generated PR comment.
- * Checks for:
- * - Non-empty content
- * - At least one section heading
- * - Reasonable length (within GitHub's 65536 char limit)
- * - UTF-8 clean (no broken characters)
  */
 export function assertCommentFormat(comment: string): void {
-  // Non-empty
   expect(comment.trim().length).toBeGreaterThan(0);
-
-  // Contains at least one markdown heading
   expect(comment).toMatch(/^#{1,6}\s+.+/m);
-
-  // Within GitHub comment limit
   expect(comment.length).toBeLessThanOrEqual(65536);
-
-  // No null bytes or broken encoding
   expect(comment).not.toContain("\0");
-
-  // Should not contain raw HTML error dumps
   expect(comment).not.toMatch(/<pre>Error:/i);
 }
 
@@ -84,21 +64,22 @@ export function assertCommentFormat(comment: string): void {
  */
 export function assertCommentMissingSection(
   comment: string,
-  section: KnownSection | string,
+  section: string,
 ): void {
-  const pattern = new RegExp(`^#{2,3}\\s+${escapeRegex(section)}`, "m");
+  const escaped = escapeRegex(section);
+  const pattern = new RegExp(
+    `(#{2,3}\\s+.*${escaped}|<summary>.*${escaped})`,
+    "mi",
+  );
   expect(comment).not.toMatch(pattern);
 }
 
 /**
- * Count the number of issues reported in a comment by counting severity markers.
+ * Count the number of issue rows in the comment (table rows with file references).
  */
 export function countIssuesInComment(comment: string): number {
-  // Count lines that start with severity markers (typical format: - **Warning**: ...)
-  const issueLines = comment.match(
-    /^[\s-]*\*?\*?(info|warning|error|critical)\*?\*?\s*[:\-]/gim,
-  );
-  return issueLines?.length ?? 0;
+  const issueRows = comment.match(/^\|\s*`[^`]+`\s*\|/gm);
+  return issueRows?.length ?? 0;
 }
 
 function escapeRegex(str: string): string {

@@ -27,6 +27,8 @@ Altimate Code Actions brings production-grade SQL analysis, dbt impact assessmen
 | :deciduous_tree: | **dbt Impact Analysis** | Maps changed models to downstream dependencies, exposures, and tests in your dbt DAG |
 | :moneybag: | **Cost Estimation** | Estimates query cost deltas so you catch expensive changes before they hit production |
 | :shield: | **PII Detection** | Identifies personally identifiable information across 15 categories to prevent data leaks |
+| :speech_balloon: | **Inline Comments** | Critical issues posted directly on diff lines for faster triage |
+| :video_game: | **Interactive Commands** | `@altimate review`, `@altimate impact`, `@altimate cost`, `@altimate help` in PR comments |
 
 ## Quick Start
 
@@ -82,39 +84,60 @@ That is it. Open a PR that touches `.sql` files and Altimate will post a review 
 
 ## Example PR Comment
 
-When Altimate reviews your pull request, it posts a structured comment like this:
+When Altimate reviews your pull request, it posts a compact, structured comment like this:
 
 ```
 ## Altimate Code Review
 
-### Summary
-Analyzed 3 SQL files | Found 5 issues | Impact score: 42/100
+| Files | Issues | Impact | Cost Delta |
+|-------|--------|--------|------------|
+| 3     | 5      | 42/100 | +$6.30/mo  |
 
-### Issues
+<details><summary>:red_circle: Errors (1)</summary>
 
-| Severity | File | Line | Rule | Message |
-|----------|------|------|------|---------|
-| ERROR    | models/staging/stg_orders.sql | 14 | no-select-star | Avoid SELECT * — enumerate columns explicitly |
-| WARNING  | models/marts/fct_revenue.sql  | 27 | missing-where   | DELETE without WHERE clause affects all rows |
-| WARNING  | models/marts/fct_revenue.sql  | 53 | implicit-join   | Use explicit JOIN syntax instead of comma joins |
-| INFO     | models/staging/stg_users.sql  | 8  | pii-detected    | Column `email` may contain PII (email address) |
-| INFO     | models/staging/stg_users.sql  | 9  | pii-detected    | Column `phone` may contain PII (phone number) |
+| File | Line | Rule | Message | Fix |
+|------|------|------|---------|-----|
+| stg_orders.sql | 14 | no-select-star | Avoid SELECT * | Enumerate columns explicitly |
 
-### dbt Impact Analysis
-- **Modified models:** stg_orders, fct_revenue
-- **Downstream models:** dim_customers, rpt_daily_revenue (+3 more)
-- **Affected exposures:** Revenue Dashboard, Executive KPI Report
-- **Affected tests:** 7 tests cover modified or downstream models
-- **Impact score:** 42/100 (medium risk)
+</details>
+
+<details><summary>:warning: Warnings (2)</summary>
+
+| File | Line | Rule | Message | Fix |
+|------|------|------|---------|-----|
+| fct_revenue.sql | 27 | missing-where | DELETE without WHERE | Add a WHERE clause |
+| fct_revenue.sql | 53 | implicit-join | Comma join detected | Use explicit JOIN syntax |
+
+</details>
+
+<details><summary>:blue_circle: Info (2)</summary>
+
+| File | Line | Rule | Message | Fix |
+|------|------|------|---------|-----|
+| stg_users.sql | 8 | pii-detected | Column `email` may contain PII | Mask or exclude from SELECT |
+| stg_users.sql | 9 | pii-detected | Column `phone` may contain PII | Mask or exclude from SELECT |
+
+</details>
+
+### Impact Analysis
+
+stg_orders ─┬─ dim_customers
+             └─ rpt_daily_revenue ─── Revenue Dashboard
+fct_revenue ─┬─ rpt_daily_revenue
+              └─ Executive KPI Report
+
+7 tests cover modified or downstream models
 
 ### Cost Estimation
+
 | Model | Before | After | Delta |
 |-------|--------|-------|-------|
 | fct_revenue | $12.40/mo | $18.70/mo | +$6.30/mo |
 
----
-*Powered by [Altimate Code](https://github.com/AltimateAI/altimate-code-actions)*
+<sub><a href="https://github.com/AltimateAI/altimate-code-actions">Altimate Code</a> · <a href="https://github.com/AltimateAI/altimate-code-actions/blob/main/docs/configuration.md">Docs</a></sub>
 ```
+
+When `comment_mode: both` is configured, critical issues are also posted as inline review comments directly on the affected diff lines.
 
 ## Features
 
@@ -158,12 +181,25 @@ Enable with `pii_check: true`:
 
 - Detects 15 PII categories: email, phone, SSN, credit card, IP address, date of birth, name, address, passport, driver license, national ID, bank account, health records, biometric data, geolocation
 
+### Interactive Commands
+
+When interactive mode is enabled, developers can trigger specific analyses by commenting on a PR:
+
+| Command | Description |
+|---------|-------------|
+| `@altimate review` | Run full SQL quality review on the PR |
+| `@altimate impact` | Run dbt DAG impact analysis only |
+| `@altimate cost` | Run cost estimation only |
+| `@altimate help` | Show available commands and configuration |
+
+Configure trigger phrases with the `mentions` input (default: `@altimate,/altimate,/oc`).
+
 ## What Altimate Adds Beyond dbt Cloud
 
 | Feature | dbt Cloud CI | Altimate Code |
 |---------|-------------|---------------|
 | Slim CI (build changed models) | Yes | No (use dbt Cloud for this) |
-| SQL anti-pattern detection | No | Yes (14 rules) |
+| SQL anti-pattern detection | No | Yes (19 rules) |
 | Impact blast radius in PR | Limited | Yes (full DAG visualization) |
 | Query cost estimation | No | Yes (Snowflake, BigQuery) |
 | PII detection | No | Yes (15 categories) |

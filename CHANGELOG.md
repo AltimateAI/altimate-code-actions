@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-24
+
+### Added
+- **Redesigned PR comment format** — compact summary table, collapsible severity-grouped issues, ASCII DAG visualization
+- **Inline review comments** — critical issues posted directly on diff lines (configurable via `comment_mode: both`)
+- **Interactive commands** — `@altimate review`, `@altimate impact`, `@altimate cost`, `@altimate help`
+- **5 new SQL rules** — `function_on_indexed_column`, `not_in_with_nulls`, `distinct_masking_bad_join`, `count_for_existence`, `no_limit_on_delete`
+- **Rule categories** — rules grouped into correctness, performance, style, security
+- **Fix suggestions** — every rule now provides a concrete fix recommendation
+- **ASCII DAG diagrams** — impact analysis shows pipeline dependency tree
+- **Cost before/after** — cost section shows per-model before/after/delta
+
+### Changed
+- PR comment is now ~8 lines for clean PRs (was ~15)
+- Issues grouped by severity with collapsible sections (was flat table)
+- Footer uses HTML links instead of markdown (more compact)
+
+### Fixed
+- All issues from v0.1.0 UX audit addressed
+
 ## [0.1.0] - 2026-03-24
 
 ### Added

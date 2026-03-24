@@ -31,7 +31,7 @@ inputs:
     default: "full"
 
   interactive:
-    description: "Enable @altimate mentions for interactive review"
+    description: "Enable @altimate mentions for interactive review. Supported commands: review, impact, cost, help"
     default: "true"
 
   mentions:

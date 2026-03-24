@@ -6,6 +6,9 @@ import type {
   CustomPattern,
 } from "../config/schema.js";
 
+/** Rule categories for grouping related checks. */
+export type RuleCategory = "correctness" | "performance" | "style" | "security";
+
 /** Function signature for a rule's detection logic. */
 export type RuleDetector = (sql: string, file: string) => SQLIssue[];
 
@@ -17,6 +20,8 @@ export interface Rule {
   name: string;
   /** Description of what this rule checks. */
   description: string;
+  /** Category grouping for this rule. */
+  category: RuleCategory;
   /** Default severity (can be overridden by config). */
   defaultSeverity: Severity;
   /** Detection function that scans SQL and returns issues. */
@@ -34,6 +39,7 @@ function findAllMatches(
   ruleId: string,
   message: string,
   severity: Severity,
+  suggestion?: string,
 ): SQLIssue[] {
   const issues: SQLIssue[] = [];
   const lines = sql.split("\n");
@@ -46,6 +52,7 @@ function findAllMatches(
         message,
         severity,
         rule: ruleId,
+        suggestion,
       });
     }
   }
@@ -61,6 +68,7 @@ function detectSelectStar(sql: string, file: string): SQLIssue[] {
     "select_star",
     "SELECT * detected — explicitly list columns for clarity and performance",
     Severity.Warning,
+    "Replace SELECT * with an explicit column list, e.g. SELECT id, name, status FROM ...",
   );
 }
 
@@ -80,6 +88,8 @@ function detectCartesianJoin(sql: string, file: string): SQLIssue[] {
           "Possible cartesian join — comma-separated tables in FROM without explicit JOIN. Use explicit JOIN syntax instead.",
         severity: Severity.Error,
         rule: "cartesian_join",
+        suggestion:
+          "Replace comma-separated tables with explicit JOIN syntax, e.g. FROM orders a JOIN customers b ON a.customer_id = b.id",
       });
     }
   }
@@ -108,6 +118,8 @@ function detectMissingPartition(sql: string, file: string): SQLIssue[] {
             "Window function without PARTITION BY — this operates over the entire result set",
           severity: Severity.Warning,
           rule: "missing_partition",
+          suggestion:
+            "Add PARTITION BY to scope the window function, e.g. ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at)",
         });
       }
     }
@@ -125,6 +137,7 @@ function detectNonDeterministic(sql: string, file: string): SQLIssue[] {
     "non_deterministic",
     "Non-deterministic function detected — results will vary between runs. Consider parameterizing.",
     Severity.Warning,
+    "Replace with a parameterized date variable or a macro argument, e.g. WHERE created_at > {{ run_date }}",
   );
 }
 
@@ -146,6 +159,8 @@ function detectCorrelatedSubquery(sql: string, file: string): SQLIssue[] {
           "Possible correlated subquery in WHERE clause — consider rewriting as a JOIN for better performance",
         severity: Severity.Warning,
         rule: "correlated_subquery",
+        suggestion:
+          "Rewrite the correlated subquery as a JOIN or use a CTE to materialize the subquery result",
       });
     }
   }
@@ -170,6 +185,8 @@ function detectImplicitTypeCast(sql: string, file: string): SQLIssue[] {
           "Possible implicit type cast — comparing a column to a quoted numeric literal",
         severity: Severity.Info,
         rule: "implicit_type_cast",
+        suggestion:
+          "Remove the quotes if comparing to a numeric column, e.g. WHERE id = 123 instead of WHERE id = '123'",
       });
     }
   }
@@ -185,6 +202,7 @@ function detectOrInJoin(sql: string, file: string): SQLIssue[] {
     "or_in_join",
     "OR in JOIN condition — this can prevent index usage and cause full scans",
     Severity.Warning,
+    "Split the OR into separate JOINs with UNION ALL, or restructure the condition to avoid OR in the ON clause",
   );
 }
 
@@ -221,6 +239,8 @@ function detectMissingGroupBy(sql: string, file: string): SQLIssue[] {
                 "Aggregate function used without GROUP BY — non-aggregate columns may cause errors",
               severity: Severity.Error,
               rule: "missing_group_by",
+              suggestion:
+                "Add a GROUP BY clause listing all non-aggregate columns, e.g. GROUP BY department, region",
             });
             break;
           }
@@ -240,6 +260,7 @@ function detectOrderByOrdinal(sql: string, file: string): SQLIssue[] {
     "order_by_ordinal",
     "ORDER BY uses ordinal position — use column names for maintainability",
     Severity.Info,
+    "Replace ordinal positions with column names, e.g. ORDER BY created_at DESC instead of ORDER BY 1",
   );
 }
 
@@ -261,6 +282,8 @@ function detectUnionWithoutAll(sql: string, file: string): SQLIssue[] {
             "UNION without ALL causes an implicit DISTINCT — use UNION ALL if duplicates are acceptable",
           severity: Severity.Info,
           rule: "union_without_all",
+          suggestion:
+            "Use UNION ALL instead of UNION to avoid the implicit DISTINCT sort, unless you specifically need deduplication",
         });
       }
     }
@@ -289,6 +312,8 @@ function detectNestedSubquery(sql: string, file: string): SQLIssue[] {
           "Deeply nested subquery (3+ levels) — consider using CTEs for readability",
         severity: Severity.Warning,
         rule: "nested_subquery",
+        suggestion:
+          "Refactor nested subqueries into WITH (CTE) clauses for better readability and maintainability",
       });
     }
   }
@@ -316,6 +341,7 @@ function detectMissingWhereClause(sql: string, file: string): SQLIssue[] {
           message: `${op} without WHERE clause — this affects all rows in the table`,
           severity: Severity.Warning,
           rule: "missing_where_clause",
+          suggestion: `Add a WHERE clause to limit the ${op} to specific rows, e.g. WHERE id = ? or WHERE status = 'inactive'`,
         });
       }
     }
@@ -332,6 +358,7 @@ function detectLeadingWildcardLike(sql: string, file: string): SQLIssue[] {
     "leading_wildcard_like",
     "LIKE with leading wildcard prevents index usage — consider full-text search",
     Severity.Info,
+    "Use a full-text search index or reverse the string and use a trailing wildcard pattern instead",
   );
 }
 
@@ -365,9 +392,115 @@ function detectDuplicateColumnAlias(sql: string, file: string): SQLIssue[] {
             message: `Duplicate column alias '${alias}' — this will cause ambiguous results`,
             severity: Severity.Error,
             rule: "duplicate_column_alias",
+            suggestion: `Rename one of the duplicate '${alias}' aliases to a unique name`,
           });
           break;
         }
+      }
+    }
+  }
+
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
+// New rule detectors
+// ---------------------------------------------------------------------------
+
+function detectFunctionOnIndexedColumn(sql: string, file: string): SQLIssue[] {
+  return findAllMatches(
+    sql,
+    file,
+    /\bWHERE\b[^;]*\b(UPPER|LOWER|TRIM|CAST|CONVERT|SUBSTRING|LEFT|RIGHT|YEAR|MONTH|DAY|DATE_TRUNC|COALESCE)\s*\(/i,
+    "function_on_indexed_column",
+    "Function applied to column in WHERE clause prevents index usage",
+    Severity.Warning,
+    "Move the function to the comparison value instead, e.g. WHERE col >= '2024-01-01' AND col < '2024-02-01' instead of WHERE YEAR(col) = 2024",
+  );
+}
+
+function detectNotInWithNulls(sql: string, file: string): SQLIssue[] {
+  return findAllMatches(
+    sql,
+    file,
+    /\bNOT\s+IN\s*\(\s*SELECT\b/i,
+    "not_in_with_nulls",
+    "NOT IN with subquery can return zero rows if any NULL exists in the subquery result",
+    Severity.Warning,
+    "Replace NOT IN (SELECT ...) with NOT EXISTS (SELECT 1 ... WHERE ...) which handles NULLs correctly",
+  );
+}
+
+function detectDistinctMaskingBadJoin(sql: string, file: string): SQLIssue[] {
+  const issues: SQLIssue[] = [];
+  const lines = sql.split("\n");
+
+  // Only flag if the query has both SELECT DISTINCT and a JOIN
+  if (!/\bSELECT\s+DISTINCT\b/i.test(sql) || !/\bJOIN\b/i.test(sql)) {
+    return issues;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    if (/\bSELECT\s+DISTINCT\b/i.test(lines[i])) {
+      issues.push({
+        file,
+        line: i + 1,
+        message:
+          "SELECT DISTINCT after JOIN may mask a fan-out from a bad join — verify the join produces the expected row count",
+        severity: Severity.Warning,
+        rule: "distinct_masking_bad_join",
+        suggestion:
+          "Check if the JOIN produces duplicates due to a missing or incorrect join condition. Fix the join instead of masking duplicates with DISTINCT",
+      });
+    }
+  }
+
+  return issues;
+}
+
+function detectCountForExistence(sql: string, file: string): SQLIssue[] {
+  const issues: SQLIssue[] = [];
+  const lines = sql.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Match COUNT(*) and > 0 on the same line, possibly separated by closing parens
+    if (/\bCOUNT\s*\(\s*\*\s*\)/i.test(line) && />\s*0/.test(line)) {
+      issues.push({
+        file,
+        line: i + 1,
+        message:
+          "COUNT(*) > 0 scans all matching rows — use EXISTS to short-circuit after the first match",
+        severity: Severity.Warning,
+        rule: "count_for_existence",
+        suggestion:
+          "Replace COUNT(*) > 0 with EXISTS (SELECT 1 FROM ... WHERE ...) for better performance",
+      });
+    }
+  }
+
+  return issues;
+}
+
+function detectNoLimitOnDelete(sql: string, file: string): SQLIssue[] {
+  const issues: SQLIssue[] = [];
+  const lines = sql.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    if (/\bDELETE\s+FROM\b/i.test(lines[i])) {
+      // Look ahead for LIMIT within the next few lines
+      const lookahead = lines.slice(i, i + 5).join(" ");
+      if (!/\bLIMIT\b/i.test(lookahead)) {
+        issues.push({
+          file,
+          line: i + 1,
+          message:
+            "DELETE without LIMIT can lock large portions of the table and generate enormous transaction logs",
+          severity: Severity.Info,
+          rule: "no_limit_on_delete",
+          suggestion:
+            "Add a LIMIT clause to batch large deletes, e.g. DELETE FROM table WHERE condition LIMIT 10000, and loop until no rows remain",
+        });
       }
     }
   }
@@ -385,6 +518,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "select_star",
     name: "No SELECT *",
     description: "Flags SELECT * statements that should list columns explicitly",
+    category: "style",
     defaultSeverity: Severity.Warning,
     detect: detectSelectStar,
   },
@@ -392,6 +526,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "cartesian_join",
     name: "Cartesian Join",
     description: "Detects implicit cartesian joins from comma-separated tables",
+    category: "correctness",
     defaultSeverity: Severity.Error,
     detect: detectCartesianJoin,
   },
@@ -399,6 +534,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "missing_partition",
     name: "Missing PARTITION BY",
     description: "Flags window functions without PARTITION BY",
+    category: "correctness",
     defaultSeverity: Severity.Warning,
     detect: detectMissingPartition,
   },
@@ -406,6 +542,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "non_deterministic",
     name: "Non-deterministic Function",
     description: "Detects functions like NOW(), CURRENT_DATE that produce varying results",
+    category: "correctness",
     defaultSeverity: Severity.Warning,
     detect: detectNonDeterministic,
   },
@@ -413,6 +550,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "correlated_subquery",
     name: "Correlated Subquery",
     description: "Flags subqueries in WHERE that may be correlated",
+    category: "performance",
     defaultSeverity: Severity.Warning,
     detect: detectCorrelatedSubquery,
   },
@@ -420,6 +558,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "implicit_type_cast",
     name: "Implicit Type Cast",
     description: "Detects potential implicit type casts in comparisons",
+    category: "correctness",
     defaultSeverity: Severity.Info,
     detect: detectImplicitTypeCast,
   },
@@ -427,6 +566,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "or_in_join",
     name: "OR in JOIN",
     description: "Flags OR conditions in JOIN clauses that prevent index usage",
+    category: "performance",
     defaultSeverity: Severity.Warning,
     detect: detectOrInJoin,
   },
@@ -434,6 +574,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "missing_group_by",
     name: "Missing GROUP BY",
     description: "Detects aggregate functions with non-aggregate columns but no GROUP BY",
+    category: "correctness",
     defaultSeverity: Severity.Error,
     detect: detectMissingGroupBy,
   },
@@ -441,6 +582,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "order_by_ordinal",
     name: "ORDER BY Ordinal",
     description: "Flags ORDER BY with numeric ordinals instead of column names",
+    category: "style",
     defaultSeverity: Severity.Info,
     detect: detectOrderByOrdinal,
   },
@@ -448,6 +590,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "union_without_all",
     name: "UNION without ALL",
     description: "Detects UNION without ALL that causes implicit DISTINCT",
+    category: "performance",
     defaultSeverity: Severity.Info,
     detect: detectUnionWithoutAll,
   },
@@ -455,6 +598,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "nested_subquery",
     name: "Nested Subquery",
     description: "Flags deeply nested subqueries that should use CTEs",
+    category: "style",
     defaultSeverity: Severity.Warning,
     detect: detectNestedSubquery,
   },
@@ -462,6 +606,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "missing_where_clause",
     name: "Missing WHERE Clause",
     description: "Detects UPDATE/DELETE without WHERE clause",
+    category: "security",
     defaultSeverity: Severity.Warning,
     detect: detectMissingWhereClause,
   },
@@ -469,6 +614,7 @@ const BUILTIN_RULES: Rule[] = [
     id: "leading_wildcard_like",
     name: "Leading Wildcard LIKE",
     description: "Flags LIKE patterns starting with % that prevent index usage",
+    category: "performance",
     defaultSeverity: Severity.Info,
     detect: detectLeadingWildcardLike,
   },
@@ -476,8 +622,49 @@ const BUILTIN_RULES: Rule[] = [
     id: "duplicate_column_alias",
     name: "Duplicate Column Alias",
     description: "Detects duplicate AS aliases in SELECT",
+    category: "correctness",
     defaultSeverity: Severity.Error,
     detect: detectDuplicateColumnAlias,
+  },
+  {
+    id: "function_on_indexed_column",
+    name: "Function on Indexed Column",
+    description: "Detects functions wrapping columns in WHERE that prevent index usage",
+    category: "performance",
+    defaultSeverity: Severity.Warning,
+    detect: detectFunctionOnIndexedColumn,
+  },
+  {
+    id: "not_in_with_nulls",
+    name: "NOT IN with Subquery",
+    description: "Detects NOT IN (SELECT ...) which fails silently when NULLs are present",
+    category: "correctness",
+    defaultSeverity: Severity.Warning,
+    detect: detectNotInWithNulls,
+  },
+  {
+    id: "distinct_masking_bad_join",
+    name: "DISTINCT Masking Bad Join",
+    description: "Flags SELECT DISTINCT after JOIN that may mask fan-out from a bad join",
+    category: "correctness",
+    defaultSeverity: Severity.Warning,
+    detect: detectDistinctMaskingBadJoin,
+  },
+  {
+    id: "count_for_existence",
+    name: "COUNT for Existence Check",
+    description: "Detects COUNT(*) > 0 which should use EXISTS for short-circuit evaluation",
+    category: "performance",
+    defaultSeverity: Severity.Warning,
+    detect: detectCountForExistence,
+  },
+  {
+    id: "no_limit_on_delete",
+    name: "No LIMIT on DELETE",
+    description: "Detects DELETE without LIMIT that can cause lock escalation and log bloat",
+    category: "security",
+    defaultSeverity: Severity.Info,
+    detect: detectNoLimitOnDelete,
   },
 ];
 
@@ -551,6 +738,7 @@ export class RuleRegistry {
         id: ruleId,
         name: pattern.name,
         description: pattern.message,
+        category: "style",
         defaultSeverity: pattern.severity,
         detect: (sql: string, file: string) =>
           findAllMatches(sql, file, regex, ruleId, pattern.message, pattern.severity),

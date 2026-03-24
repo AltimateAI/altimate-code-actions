@@ -33,6 +33,11 @@ export const DEFAULT_CONFIG: AltimateConfig = {
       missing_where_clause: rule(Severity.Warning),
       leading_wildcard_like: rule(Severity.Info),
       duplicate_column_alias: rule(Severity.Error),
+      function_on_indexed_column: rule(Severity.Warning),
+      not_in_with_nulls: rule(Severity.Warning),
+      distinct_masking_bad_join: rule(Severity.Warning),
+      count_for_existence: rule(Severity.Warning),
+      no_limit_on_delete: rule(Severity.Info),
     },
 
     include: ["**/*.sql", "**/*.sqlx"],

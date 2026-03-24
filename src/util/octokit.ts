@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import type { ChangedFile } from "../analysis/types.js";
+import type { ChangedFile, InlineComment } from "../analysis/types.js";
 
 const COMMENT_MARKER = "<!-- altimate-code-review -->";
 const MAX_PAGINATION_PAGES = 50;
@@ -214,6 +214,39 @@ export async function postInlineComment(
     line,
     side: "RIGHT",
   });
+}
+
+/**
+ * Post all inline comments as a single pull request review.
+ * Uses the Reviews API to batch comments, avoiding notification spam.
+ */
+export async function postReviewComments(
+  prNumber: number,
+  comments: InlineComment[],
+): Promise<void> {
+  if (comments.length === 0) return;
+
+  const octokit = getOctokit();
+  const { owner, repo } = getRepo();
+  const commitSha = getHeadSHA();
+
+  await withRetry(() =>
+    octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number: prNumber,
+      commit_id: commitSha,
+      event: "COMMENT",
+      body: "",
+      comments: comments.map((c) => ({
+        path: c.path,
+        line: c.line,
+        body: c.body,
+      })),
+    }),
+  );
+
+  core.info(`Posted review with ${comments.length} inline comment(s)`);
 }
 
 /**

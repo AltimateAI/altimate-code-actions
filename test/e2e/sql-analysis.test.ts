@@ -137,6 +137,51 @@ function detectAntiPatterns(
     });
   }
 
+  // Function on indexed column in WHERE
+  if (/\bWHERE\b[^;]*\b(UPPER|LOWER|TRIM|CAST|CONVERT|SUBSTRING|LEFT|RIGHT|YEAR|MONTH|DAY|DATE_TRUNC|COALESCE)\s*\(/i.test(noComments)) {
+    issues.push({
+      type: "function_on_indexed_column",
+      severity: "warning",
+      message: "Function applied to column in WHERE clause prevents index usage",
+    });
+  }
+
+  // NOT IN with subquery
+  if (/\bNOT\s+IN\s*\(\s*SELECT\b/i.test(noComments)) {
+    issues.push({
+      type: "not_in_with_nulls",
+      severity: "warning",
+      message: "NOT IN with subquery can return zero rows if any NULL exists in the subquery result",
+    });
+  }
+
+  // SELECT DISTINCT after JOIN
+  if (/\bSELECT\s+DISTINCT\b/i.test(noComments) && /\bJOIN\b/i.test(noComments)) {
+    issues.push({
+      type: "distinct_masking_bad_join",
+      severity: "warning",
+      message: "SELECT DISTINCT after JOIN may mask a fan-out from a bad join",
+    });
+  }
+
+  // COUNT(*) > 0 for existence (may be separated by closing parens from subquery)
+  if (/\bCOUNT\s*\(\s*\*\s*\)/i.test(noComments) && />\s*0/.test(noComments)) {
+    issues.push({
+      type: "count_for_existence",
+      severity: "warning",
+      message: "COUNT(*) > 0 scans all matching rows; use EXISTS to short-circuit",
+    });
+  }
+
+  // DELETE without LIMIT
+  if (/\bDELETE\s+FROM\b/i.test(noComments) && !/\bLIMIT\b/i.test(noComments)) {
+    issues.push({
+      type: "no_limit_on_delete",
+      severity: "info",
+      message: "DELETE without LIMIT can lock large portions of the table",
+    });
+  }
+
   return issues;
 }
 
@@ -232,6 +277,66 @@ describe("SQL Anti-Pattern Detection", () => {
     );
   });
 
+  it("detects function on indexed column", async () => {
+    const result = await analyzeFile(
+      resolve(ANTI_PATTERNS, "function-on-indexed-column.sql"),
+    );
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        type: "function_on_indexed_column",
+      }),
+    );
+  });
+
+  it("detects NOT IN with nulls", async () => {
+    const result = await analyzeFile(
+      resolve(ANTI_PATTERNS, "not-in-with-nulls.sql"),
+    );
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        type: "not_in_with_nulls",
+      }),
+    );
+  });
+
+  it("detects DISTINCT masking bad join", async () => {
+    const result = await analyzeFile(
+      resolve(ANTI_PATTERNS, "distinct-instead-of-join-fix.sql"),
+    );
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        type: "distinct_masking_bad_join",
+      }),
+    );
+  });
+
+  it("detects COUNT(*) > 0 for existence", async () => {
+    const result = await analyzeFile(
+      resolve(ANTI_PATTERNS, "count-star-for-existence.sql"),
+    );
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        type: "count_for_existence",
+      }),
+    );
+  });
+
+  it("detects DELETE without LIMIT", async () => {
+    const result = await analyzeFile(
+      resolve(ANTI_PATTERNS, "no-limit-on-delete.sql"),
+    );
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        type: "no_limit_on_delete",
+      }),
+    );
+  });
+
   it("passes clean query with no issues", async () => {
     const result = await analyzeFile(
       resolve(CLEAN_SQL, "well-formed-query.sql"),
@@ -255,6 +360,11 @@ describe("SQL Anti-Pattern Detection", () => {
       "missing-partition.sql",
       "or-in-join.sql",
       "implicit-type-cast.sql",
+      "function-on-indexed-column.sql",
+      "not-in-with-nulls.sql",
+      "distinct-instead-of-join-fix.sql",
+      "count-star-for-existence.sql",
+      "no-limit-on-delete.sql",
     ];
 
     for (const file of files) {

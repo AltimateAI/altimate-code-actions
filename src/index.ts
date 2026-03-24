@@ -13,6 +13,8 @@ import {
   isInteractiveMention,
   getMentionComment,
 } from "./context/pr.js";
+import { parseCommand } from "./interactive/commands.js";
+import { handleCommand } from "./interactive/handler.js";
 import { detectDBTProject, getManifest } from "./context/dbt.js";
 import { analyzeSQLFiles } from "./analysis/sql-review.js";
 import { analyzeImpact } from "./analysis/impact.js";
@@ -119,9 +121,11 @@ async function main(): Promise<void> {
       if (isForkPR) {
         const { buildComment } = await import("./reporting/comment.js");
         const body = buildComment(report);
-        core.summary.addRaw(body);
-        await core.summary.write();
-        core.info("Fork PR — results written to job summary");
+        if (body) {
+          core.summary.addRaw(body);
+          await core.summary.write();
+          core.info("Fork PR — results written to job summary");
+        }
       } else {
         commentUrl = await postReviewComment(
           prContext.prNumber,
@@ -205,14 +209,31 @@ async function runAnalyses(
 }
 
 /**
- * Handle an interactive mention by delegating to `altimate-code github run`.
- * This passes through the full event context so the CLI can respond as a
- * conversational agent.
+ * Handle an interactive mention by parsing the command and routing to the
+ * appropriate handler. Falls back to the CLI for unstructured mentions.
  */
 async function handleInteractiveMention(config: ActionConfig): Promise<void> {
   const comment = getMentionComment();
   core.info(`Interactive mention detected: "${comment.slice(0, 80)}..."`);
 
+  const parsed = parseCommand(comment, config.mentions);
+
+  if (parsed) {
+    core.info(`Parsed command: ${parsed.command} (args: ${parsed.args.join(", ")})`);
+    const prNumber =
+      github.context.payload.pull_request?.number ??
+      github.context.payload.issue?.number;
+
+    if (!prNumber) {
+      core.warning("Could not determine PR number from event payload");
+      return;
+    }
+
+    await handleCommand(parsed, prNumber, config);
+    return;
+  }
+
+  // Fallback: delegate to CLI for unstructured mentions
   const env: Record<string, string> = {
     MODEL: config.model,
   };

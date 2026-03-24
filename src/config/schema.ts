@@ -61,6 +61,11 @@ export interface SQLReviewConfig {
     missing_where_clause: RuleConfig;
     leading_wildcard_like: RuleConfig;
     duplicate_column_alias: RuleConfig;
+    function_on_indexed_column: RuleConfig;
+    not_in_with_nulls: RuleConfig;
+    distinct_masking_bad_join: RuleConfig;
+    count_for_existence: RuleConfig;
+    no_limit_on_delete: RuleConfig;
   };
 
   /** Glob patterns for files to include. */
