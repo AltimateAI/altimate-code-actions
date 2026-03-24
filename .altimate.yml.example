@@ -1,110 +1,160 @@
 # Altimate Code Review Configuration
 # Place this file as .altimate.yml at the root of your repository.
 # All fields are optional — sensible defaults are applied for anything omitted.
+#
+# Two schema versions are supported:
+#   version: 1  — built-in regex rules (works without the altimate-code CLI)
+#   version: 2  — delegates to `altimate-code check` for richer analysis
 
-version: 1
+# =============================================================================
+# VERSION 1 (regex rule engine — no CLI required)
+# =============================================================================
+# version: 1
+#
+# sql_review:
+#   enabled: true
+#   severity_threshold: warning  # info | warning | error | critical
+#
+#   rules:
+#     select_star:
+#       enabled: true
+#       severity: warning
+#     cartesian_join:
+#       enabled: true
+#       severity: error
+#     missing_partition:
+#       enabled: true
+#       severity: warning
+#     non_deterministic:
+#       enabled: true
+#       severity: warning
+#     correlated_subquery:
+#       enabled: true
+#       severity: warning
+#     implicit_type_cast:
+#       enabled: true
+#       severity: info
+#     or_in_join:
+#       enabled: true
+#       severity: warning
+#     missing_group_by:
+#       enabled: true
+#       severity: error
+#     order_by_ordinal:
+#       enabled: true
+#       severity: info
+#     union_without_all:
+#       enabled: true
+#       severity: info
+#     nested_subquery:
+#       enabled: true
+#       severity: warning
+#     missing_where_clause:
+#       enabled: true
+#       severity: warning
+#     leading_wildcard_like:
+#       enabled: true
+#       severity: info
+#     duplicate_column_alias:
+#       enabled: true
+#       severity: error
+#
+#   include:
+#     - "models/**/*.sql"
+#     - "analyses/**/*.sql"
+#   exclude:
+#     - "models/staging/legacy/**"
+#
+#   custom_patterns:
+#     - name: no_delete_without_where
+#       pattern: "DELETE\\s+FROM\\s+\\w+\\s*;"
+#       message: "DELETE without WHERE clause"
+#       severity: critical
+#     - name: no_truncate
+#       pattern: "\\bTRUNCATE\\b"
+#       message: "TRUNCATE detected — use DELETE with WHERE for safer data removal"
+#       severity: error
+#
+# impact_analysis:
+#   enabled: true
+#   warn_threshold: 10
+#   fail_threshold: 50
+#
+# cost_estimation:
+#   enabled: false
+#   warn_threshold: 100
+#   fail_threshold: 0
+#
+# pii_detection:
+#   enabled: true
+#   categories: [email, ssn, phone, credit_card, ip_address]
+#
+# comment:
+#   mode: single
+#   max_issues_shown: 20
+#   show_clean_files: false
+#
+# dialect: auto
 
-# ─── SQL Review ─────────────────────────────────────────────────────────────
-sql_review:
-  enabled: true
-  severity_threshold: warning  # info | warning | error | critical
 
-  rules:
-    select_star:
-      enabled: true
-      severity: warning
-    cartesian_join:
-      enabled: true
-      severity: error
-    missing_partition:
-      enabled: true
-      severity: warning
-    non_deterministic:
-      enabled: true
-      severity: warning
-    correlated_subquery:
-      enabled: true
-      severity: warning
-    implicit_type_cast:
-      enabled: true
-      severity: info
-    or_in_join:
-      enabled: true
-      severity: warning
-    missing_group_by:
-      enabled: true
-      severity: error
-    order_by_ordinal:
-      enabled: true
-      severity: info
-    union_without_all:
-      enabled: true
-      severity: info
-    nested_subquery:
-      enabled: true
-      severity: warning
-    missing_where_clause:
-      enabled: true
-      severity: warning
-    leading_wildcard_like:
-      enabled: true
-      severity: info
-    duplicate_column_alias:
-      enabled: true
-      severity: error
+# =============================================================================
+# VERSION 2 (delegates to `altimate-code check` CLI)
+# =============================================================================
+# Requires the altimate-code CLI to be installed. If the CLI is unavailable,
+# the action falls back to the v1 regex engine automatically.
 
-  # Glob patterns for which files to include/exclude
-  include:
-    - "models/**/*.sql"
-    - "analyses/**/*.sql"
-  exclude:
-    - "models/staging/legacy/**"
+version: 2
 
-  # Custom patterns: flag SQL that matches these regexes
-  custom_patterns:
-    - name: no_delete_without_where
-      pattern: "DELETE\\s+FROM\\s+\\w+\\s*;"
-      message: "DELETE without WHERE clause"
-      severity: critical
-    - name: no_truncate
-      pattern: "\\bTRUNCATE\\b"
-      message: "TRUNCATE detected — use DELETE with WHERE for safer data removal"
-      severity: error
+# ─── Checks ─────────────────────────────────────────────────────────────────
+# Each check maps to a category in `altimate-code check --checks <list>`.
+# Disable any check by setting `enabled: false`.
+checks:
+  lint:
+    enabled: true
+    # disabled_rules:
+    #   - L001   # select_star
+    #   - L009   # order_by_ordinal
+    # severity_overrides:
+    #   L002: error   # cartesian_join promoted to error
 
-# ─── Impact Analysis ────────────────────────────────────────────────────────
-impact_analysis:
-  enabled: true
-  warn_threshold: 10   # warn if > N downstream models affected
-  fail_threshold: 50   # fail if > N downstream models affected
+  validate:
+    enabled: true   # DataFusion SQL validation
 
-# ─── Cost Estimation ────────────────────────────────────────────────────────
-cost_estimation:
-  enabled: false
-  warn_threshold: 100  # warn if monthly cost delta > $N
-  fail_threshold: 0    # 0 = disabled
+  safety:
+    enabled: true   # SQL injection detection
 
-# ─── PII Detection ─────────────────────────────────────────────────────────
-pii_detection:
-  enabled: true
-  categories:
-    - email
-    - ssn
-    - phone
-    - credit_card
-    - ip_address
+  policy:
+    enabled: false
+    # file: .altimate-policy.yml   # custom guardrails policy file
 
-  # Custom PII column patterns
-  # custom_patterns:
-  #   - name: employee_id
-  #     column_pattern: "emp_id|employee_number"
-  #     severity: warning
+  pii:
+    enabled: true
+    categories:
+      - email
+      - ssn
+      - phone
+      - credit_card
+      - ip_address
+
+  semantic:
+    enabled: false   # requires schema resolution
+
+  grade:
+    enabled: false   # SQL quality grading
+
+# ─── Schema Resolution ─────────────────────────────────────────────────────
+# schema:
+#   source: dbt             # dbt | files | warehouse
+#   dbt:
+#     manifest_path: target/manifest.json
+#   # paths:                # for source: files
+#   #   - schema/warehouse.yml
 
 # ─── Comment Settings ──────────────────────────────────────────────────────
 comment:
-  mode: single            # single | inline | both
-  max_issues_shown: 20    # cap the number of issues in the summary
-  show_clean_files: false  # include files that passed with no issues
+  mode: single              # single | inline | both
+  max_issues_shown: 20
+  show_clean_files: false
 
 # ─── Dialect ────────────────────────────────────────────────────────────────
-# "auto" detects dialect from file content and project settings.
 dialect: auto

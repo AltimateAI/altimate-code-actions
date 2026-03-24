@@ -158,3 +158,82 @@ export type PartialAltimateConfig = {
   comment?: Partial<CommentConfig>;
   dialect?: Dialect;
 };
+
+// ---------------------------------------------------------------------------
+// V2 Configuration — maps to `altimate-code check` CLI options
+// ---------------------------------------------------------------------------
+
+/** Per-check configuration for the v2 `altimate-code check` integration. */
+export interface CheckConfig {
+  enabled: boolean;
+}
+
+export interface LintCheckConfig extends CheckConfig {
+  /** Rule IDs to disable even if they would otherwise fire. */
+  disabled_rules?: string[];
+  /** Override the default severity for specific rules. */
+  severity_overrides?: Record<string, Severity>;
+}
+
+export interface PolicyCheckConfig extends CheckConfig {
+  /** Path to a policy file. If omitted, the CLI looks for `.altimate-policy.yml`. */
+  file?: string;
+}
+
+export interface PIICheckConfig extends CheckConfig {
+  /** PII categories to scan for (e.g. "email", "ssn"). */
+  categories?: string[];
+}
+
+export interface SchemaConfig {
+  /** Where the CLI should resolve schema from. */
+  source: string;
+  /** Explicit schema file paths. */
+  paths?: string[];
+  /** dbt-specific schema resolution. */
+  dbt?: { manifest_path?: string };
+}
+
+/**
+ * V2 configuration schema for `.altimate.yml`. When `version: 2` is set,
+ * the action delegates all static checks to `altimate-code check` instead
+ * of the built-in regex rule engine.
+ */
+export interface AltimateConfigV2 {
+  version: 2;
+  checks: {
+    lint: LintCheckConfig;
+    validate: CheckConfig;
+    safety: CheckConfig;
+    policy: PolicyCheckConfig;
+    pii: PIICheckConfig;
+    semantic: CheckConfig;
+    grade: CheckConfig;
+  };
+  schema?: SchemaConfig;
+  policy?: Record<string, unknown>;
+  dialect?: Dialect;
+  comment?: Partial<CommentConfig>;
+}
+
+/**
+ * Build `CheckCommandOptions` from a v2 config, collecting all enabled
+ * check names and passing through schema/policy/dialect settings.
+ */
+export function buildCheckOptionsFromV2(
+  config: AltimateConfigV2,
+): { checks: string[]; schemaPath?: string; policyPath?: string; dialect?: string } {
+  const checks: string[] = [];
+  for (const [name, checkConfig] of Object.entries(config.checks)) {
+    if (checkConfig.enabled) {
+      checks.push(name);
+    }
+  }
+
+  return {
+    checks,
+    schemaPath: config.schema?.paths?.[0],
+    policyPath: config.checks.policy?.file,
+    dialect: config.dialect !== "auto" ? config.dialect : undefined,
+  };
+}

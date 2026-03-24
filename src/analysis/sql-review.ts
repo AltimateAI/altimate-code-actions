@@ -5,6 +5,8 @@ import type { ChangedFile, SQLIssue, ActionConfig } from "./types.js";
 import { Severity } from "./types.js";
 import { createRegistry } from "./rules.js";
 import { loadConfig } from "../config/loader.js";
+import { isCheckCommandAvailable, runCheckCommand } from "./cli-check.js";
+import type { CheckCommandOptions } from "./cli-check.js";
 
 /**
  * Run SQL quality analysis on the given files.
@@ -55,13 +57,43 @@ export async function analyzeSQLFiles(
 
 /**
  * Analyze SQL files using the built-in rule engine (static mode).
- * No CLI or LLM model needed — pure regex-based detection.
+ *
+ * Tries `altimate-code check` first for richer analysis (lint + safety).
+ * Falls back to the regex-based RuleRegistry if the CLI is unavailable.
  */
 async function analyzeWithRuleEngine(
   files: ChangedFile[],
   _config: ActionConfig,
 ): Promise<SQLIssue[]> {
-  const altimateConfig = await loadConfig(".altimate.yml");
+  // Try the CLI check command first
+  const cliAvailable = await isCheckCommandAvailable();
+
+  if (cliAvailable) {
+    core.info("Using altimate-code check for static analysis");
+    const altimateConfig = loadConfig(".altimate.yml");
+    const options: CheckCommandOptions = {
+      checks: ["lint", "safety"],
+      severity: altimateConfig.sql_review.severity_threshold,
+      dialect: altimateConfig.dialect !== "auto" ? altimateConfig.dialect : undefined,
+    };
+    const issues = await runCheckCommand(files, options);
+    core.info(`CLI check found ${issues.length} issue(s) total`);
+    return issues;
+  }
+
+  // Fallback: built-in regex rules
+  core.info("altimate-code CLI not available — falling back to built-in rule engine");
+  return analyzeWithRegexRules(files);
+}
+
+/**
+ * Pure regex-based rule engine fallback. Used when the `altimate-code` CLI
+ * is not installed or does not support the `check` subcommand.
+ */
+async function analyzeWithRegexRules(
+  files: ChangedFile[],
+): Promise<SQLIssue[]> {
+  const altimateConfig = loadConfig(".altimate.yml");
   const registry = createRegistry(altimateConfig);
   const allIssues: SQLIssue[] = [];
 
@@ -80,7 +112,7 @@ async function analyzeWithRuleEngine(
     allIssues.push(...issues);
   }
 
-  core.info(`Static analysis found ${allIssues.length} issue(s) total`);
+  core.info(`Regex rule engine found ${allIssues.length} issue(s) total`);
   return allIssues;
 }
 

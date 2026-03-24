@@ -5,7 +5,9 @@ import {
   loadConfig as loadFileConfig,
   mergeWithInputs,
 } from "./config/loader.js";
-import type { AltimateConfig } from "./config/schema.js";
+import type { AltimateConfig, AltimateConfigV2 } from "./config/schema.js";
+import { buildCheckOptionsFromV2 } from "./config/schema.js";
+import { isCheckCommandAvailable, runCheckCommand } from "./analysis/cli-check.js";
 import {
   getPRContext,
   getChangedSQLFiles,
@@ -164,12 +166,20 @@ async function main(): Promise<void> {
 /**
  * Run all enabled analyses. Returns [issues, impact, costEstimates].
  * Analyses that are disabled return empty arrays / null.
+ *
+ * When a v2 config is detected and the `altimate-code` CLI supports the
+ * `check` subcommand, all enabled checks are delegated to a single CLI
+ * invocation instead of the per-file regex engine.
  */
 async function runAnalyses(
   sqlFiles: ReturnType<typeof getChangedSQLFiles>,
   prContext: Awaited<ReturnType<typeof getPRContext>>,
   config: ActionConfig,
 ): Promise<[SQLIssue[], ImpactResult | null, CostEstimate[]]> {
+  // Detect v2 config — if present and CLI available, use `altimate-code check`
+  const fileConfig = (config as ActionConfig & { fileConfig?: AltimateConfig }).fileConfig;
+  const isV2 = fileConfig && (fileConfig as unknown as { version: number }).version === 2;
+
   const promises: [
     Promise<SQLIssue[]>,
     Promise<ImpactResult | null>,
@@ -177,7 +187,9 @@ async function runAnalyses(
   ] = [
     // SQL review
     config.sqlReview && (config.mode === "full" || config.mode === "static" || config.mode === "ai")
-      ? analyzeSQLFiles(sqlFiles, config)
+      ? (isV2
+        ? runV2CheckAnalysis(sqlFiles, fileConfig as unknown as AltimateConfigV2)
+        : analyzeSQLFiles(sqlFiles, config))
       : Promise.resolve([]),
 
     // Impact analysis
@@ -232,6 +244,31 @@ async function runAnalyses(
   ];
 
   return Promise.all(promises);
+}
+
+/**
+ * Run analysis via `altimate-code check` using a v2 config. All enabled
+ * checks are collected and sent as a single CLI invocation. Falls back to
+ * the standard `analyzeSQLFiles` path if the CLI is not available.
+ */
+async function runV2CheckAnalysis(
+  sqlFiles: ReturnType<typeof getChangedSQLFiles>,
+  v2Config: AltimateConfigV2,
+): Promise<SQLIssue[]> {
+  const cliReady = await isCheckCommandAvailable();
+  if (!cliReady) {
+    core.warning("v2 config detected but altimate-code CLI unavailable — falling back to built-in rules");
+    return analyzeSQLFiles(sqlFiles, { mode: "static" } as ActionConfig);
+  }
+
+  const options = buildCheckOptionsFromV2(v2Config);
+  if (options.checks.length === 0) {
+    core.info("All checks disabled in v2 config — skipping");
+    return [];
+  }
+
+  core.info(`Running altimate-code check with: ${options.checks.join(", ")}`);
+  return runCheckCommand(sqlFiles, options);
 }
 
 /**

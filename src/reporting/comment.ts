@@ -360,12 +360,79 @@ export function buildMermaidDAG(impact: ImpactResult): string {
   return lines.join("\n");
 }
 
+/** Display names for check category prefixes. */
+const CATEGORY_LABELS: Record<string, string> = {
+  lint: "Lint",
+  safety: "Safety",
+  validate: "Validation",
+  policy: "Policy",
+  pii: "PII",
+  semantic: "Semantic",
+  grade: "Grade",
+};
+
 /**
- * Build the SQL issues section, grouped by severity.
+ * Extract the category prefix from a rule ID (e.g. `lint/L001` -> `lint`).
+ * Returns `undefined` if the rule has no slash-delimited prefix.
+ */
+function extractCategory(rule?: string): string | undefined {
+  if (!rule) return undefined;
+  const slashIndex = rule.indexOf("/");
+  return slashIndex > 0 ? rule.slice(0, slashIndex) : undefined;
+}
+
+/**
+ * Build the SQL issues section, grouped first by check category (if
+ * present), then by severity within each group.
+ *
+ * When issues come from `altimate-code check`, their `rule` field is
+ * prefixed with the category (e.g. `lint/L001`, `safety/injection`).
+ * Each category gets its own subsection. Issues without a category prefix
+ * (from the regex rule engine) are grouped under a generic "SQL Quality"
+ * heading.
+ *
  * Critical/error issues are NOT collapsible (auto-expanded).
  * Warning/info issues are collapsible.
  */
 export function buildIssuesSection(issues: SQLIssue[]): string {
+  // Group by category prefix
+  const byCategory = new Map<string, SQLIssue[]>();
+  for (const issue of issues) {
+    const cat = extractCategory(issue.rule) ?? "_default";
+    const bucket = byCategory.get(cat) ?? [];
+    bucket.push(issue);
+    byCategory.set(cat, bucket);
+  }
+
+  // Render order: known categories first, then default
+  const categoryOrder = ["lint", "safety", "validate", "policy", "pii", "semantic", "grade", "_default"];
+  const sortedCategories = [...byCategory.keys()].sort(
+    (a, b) => categoryOrder.indexOf(a) - categoryOrder.indexOf(b),
+  );
+
+  const sections: string[] = [];
+
+  for (const cat of sortedCategories) {
+    const catIssues = byCategory.get(cat)!;
+    const label = cat === "_default" ? "SQL Quality" : (CATEGORY_LABELS[cat] ?? cat);
+
+    // If there are multiple categories, add a subsection header
+    if (byCategory.size > 1) {
+      sections.push(`#### ${label}`);
+      sections.push("");
+    }
+
+    sections.push(buildSeverityGroupedTable(catIssues));
+  }
+
+  return sections.join("\n").trimEnd();
+}
+
+/**
+ * Render a severity-grouped issues table. Critical/error auto-expanded,
+ * warning/info collapsible.
+ */
+function buildSeverityGroupedTable(issues: SQLIssue[]): string {
   const lines: string[] = [];
 
   const grouped = new Map<string, SQLIssue[]>();
@@ -395,11 +462,9 @@ export function buildIssuesSection(issues: SQLIssue[]): string {
     const isCritical = severity === "critical" || severity === "error";
 
     if (isCritical) {
-      // Critical/error: NOT collapsible, auto-expanded
       lines.push(`### ${emoji} ${count} ${noun}`);
       lines.push("");
     } else {
-      // Warning/info: collapsible
       lines.push("<details>");
       lines.push(`<summary>${emoji} ${count} ${noun}</summary>`);
       lines.push("");
@@ -436,7 +501,7 @@ export function buildIssuesSection(issues: SQLIssue[]): string {
     }
   }
 
-  return lines.join("\n").trimEnd();
+  return lines.join("\n");
 }
 
 /**

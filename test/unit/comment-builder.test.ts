@@ -717,6 +717,65 @@ describe("Comment Builder v0.3", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // buildIssuesSection — category grouping (CLI check output)
+  // ---------------------------------------------------------------------------
+
+  describe("buildIssuesSection category grouping", () => {
+    it("groups issues by rule prefix into subsections", () => {
+      const issues: SQLIssue[] = [
+        makeIssue({ rule: "lint/L001", severity: Severity.Warning, message: "SELECT *" }),
+        makeIssue({ rule: "lint/L003", severity: Severity.Info, message: "ORDER BY ordinal" }),
+        makeIssue({ rule: "safety/injection", severity: Severity.Critical, message: "SQL injection" }),
+        makeIssue({ rule: "pii/email", severity: Severity.Warning, message: "PII detected" }),
+      ];
+      const section = buildIssuesSection(issues);
+
+      // Should have category subsection headers
+      expect(section).toContain("#### Lint");
+      expect(section).toContain("#### Safety");
+      expect(section).toContain("#### PII");
+    });
+
+    it("skips category headers when all issues are from the same source", () => {
+      const issues: SQLIssue[] = [
+        makeIssue({ severity: Severity.Warning, message: "warn1" }),
+        makeIssue({ severity: Severity.Info, message: "info1" }),
+      ];
+      const section = buildIssuesSection(issues);
+
+      // No category prefix => no subsection headers
+      expect(section).not.toContain("####");
+    });
+
+    it("renders Lint before Safety before PII", () => {
+      const issues: SQLIssue[] = [
+        makeIssue({ rule: "pii/email", severity: Severity.Warning, message: "pii_msg" }),
+        makeIssue({ rule: "lint/L001", severity: Severity.Warning, message: "lint_msg" }),
+        makeIssue({ rule: "safety/injection", severity: Severity.Warning, message: "safety_msg" }),
+      ];
+      const section = buildIssuesSection(issues);
+
+      const lintIdx = section.indexOf("#### Lint");
+      const safetyIdx = section.indexOf("#### Safety");
+      const piiIdx = section.indexOf("#### PII");
+
+      expect(lintIdx).toBeLessThan(safetyIdx);
+      expect(safetyIdx).toBeLessThan(piiIdx);
+    });
+
+    it("handles mix of prefixed and unprefixed rules", () => {
+      const issues: SQLIssue[] = [
+        makeIssue({ rule: "lint/L001", severity: Severity.Warning, message: "lint issue" }),
+        makeIssue({ severity: Severity.Warning, message: "regex issue" }),
+      ];
+      const section = buildIssuesSection(issues);
+
+      expect(section).toContain("#### Lint");
+      expect(section).toContain("#### SQL Quality");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // buildFooter
   // ---------------------------------------------------------------------------
 
