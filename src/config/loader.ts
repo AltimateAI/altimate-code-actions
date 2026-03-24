@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import * as core from "@actions/core";
+import yaml from "js-yaml";
 import { Severity } from "../analysis/types.js";
 import type { CommentMode } from "../analysis/types.js";
 import { DEFAULT_CONFIG } from "./defaults.js";
@@ -10,198 +11,13 @@ import type {
 } from "./schema.js";
 
 /**
- * Minimal YAML parser — handles the flat/nested key-value structures we need
- * without pulling in a full YAML library. Supports:
- *   - Scalars (strings, numbers, booleans)
- *   - Nested objects via indentation
- *   - Arrays with `- item` syntax
- *   - Comments with `#`
- *
- * For production use this should be replaced with `yaml` or `js-yaml`, but
- * keeping zero runtime deps for the action is preferable.
+ * Parse YAML text into a plain object using js-yaml.
  */
 function parseYAML(text: string): Record<string, unknown> {
-  const rawLines = text.split("\n");
-  const root: Record<string, unknown> = {};
-
-  // Stack tracks nested objects: { indent, obj, key (if this obj is a value under a key) }
-  const stack: Array<{
-    indent: number;
-    obj: Record<string, unknown>;
-  }> = [{ indent: -2, obj: root }];
-
-  // Track current array context: which parent obj, which key, and at what indent
-  let arrayCtx: {
-    parent: Record<string, unknown>;
-    key: string;
-    indent: number;
-  } | null = null;
-
-  for (const rawLine of rawLines) {
-    // Strip inline comments (not inside quotes — good enough for config)
-    let line = rawLine;
-    if (!line.trimStart().startsWith("#")) {
-      const commentIdx = line.indexOf(" #");
-      if (commentIdx >= 0) {
-        line = line.slice(0, commentIdx);
-      }
-    }
-
-    // Skip blank lines and full-line comments
-    if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
-
-    const indent = line.length - line.trimStart().length;
-    const trimmed = line.trimStart();
-
-    // If indent drops below current array context, clear it
-    if (arrayCtx && indent < arrayCtx.indent) {
-      arrayCtx = null;
-    }
-
-    // ── Array item: "- value" or "- key: value, key: value" ──
-    if (trimmed.startsWith("- ")) {
-      const itemContent = trimmed.slice(2).trim();
-
-      // If we have no array context yet, we need to create one.
-      // The array should be the value of the last key set on the parent at
-      // the indentation level just above this one.
-      if (!arrayCtx || indent !== arrayCtx.indent) {
-        // Pop stack so the top is the correct parent for this indent
-        while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
-          stack.pop();
-        }
-
-        // Strategy: look at the current top of stack. If it's an empty object
-        // placeholder (created by "key:" with no value), then the PARENT of
-        // this stack entry owns the key. Pop one more and convert that key's
-        // value from {} to [].
-        let found = false;
-        const topEntry = stack[stack.length - 1];
-
-        if (
-          stack.length > 1 &&
-          Object.keys(topEntry.obj).length === 0
-        ) {
-          // This empty object is the value of some key in the parent
-          const parentObj = stack[stack.length - 2].obj;
-          const keys = Object.keys(parentObj);
-          for (let k = keys.length - 1; k >= 0; k--) {
-            if (parentObj[keys[k]] === topEntry.obj) {
-              parentObj[keys[k]] = [];
-              // Pop the empty obj from the stack since it's now an array
-              stack.pop();
-              arrayCtx = { parent: parentObj, key: keys[k], indent };
-              found = true;
-              break;
-            }
-          }
-        }
-
-        if (!found) {
-          // Look for an empty object placeholder among the top's own keys
-          const parentObj = topEntry.obj;
-          const keys = Object.keys(parentObj);
-          for (let k = keys.length - 1; k >= 0; k--) {
-            const val = parentObj[keys[k]];
-            if (
-              typeof val === "object" &&
-              val !== null &&
-              !Array.isArray(val) &&
-              Object.keys(val).length === 0
-            ) {
-              parentObj[keys[k]] = [];
-              arrayCtx = { parent: parentObj, key: keys[k], indent };
-              found = true;
-              break;
-            }
-          }
-        }
-
-        if (!found) {
-          // Cannot determine which key this array belongs to — skip
-          continue;
-        }
-      }
-
-      const arr = arrayCtx!.parent[arrayCtx!.key] as unknown[];
-
-      // Check if it's a map item (has colon with a key-like prefix)
-      const mapMatch = itemContent.match(
-        /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/,
-      );
-      if (mapMatch) {
-        const mapObj: Record<string, unknown> = {};
-        parseInlineMap(itemContent, mapObj);
-        arr.push(mapObj);
-      } else {
-        arr.push(parseScalar(itemContent));
-      }
-      continue;
-    }
-
-    // ── Key-value pair: "key: value" or "key:" ──
-    const kvMatch = trimmed.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/);
-    if (kvMatch) {
-      const key = kvMatch[1];
-      const rawValue = kvMatch[2].trim();
-
-      // Clear array context when we encounter a non-array line
-      arrayCtx = null;
-
-      // Pop stack to find the right parent for this indent level
-      while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
-        stack.pop();
-      }
-      const parent = stack[stack.length - 1].obj;
-
-      if (rawValue === "" || rawValue === "|" || rawValue === ">") {
-        // Nested object or block scalar — create object placeholder
-        // (may be converted to array if "- " items follow)
-        const child: Record<string, unknown> = {};
-        parent[key] = child;
-        stack.push({ indent, obj: child });
-      } else if (rawValue.startsWith("[") || rawValue.startsWith("{")) {
-        // Inline JSON array or object
-        try {
-          parent[key] = JSON.parse(rawValue);
-        } catch {
-          parent[key] = rawValue;
-        }
-      } else {
-        parent[key] = parseScalar(rawValue);
-      }
-      continue;
-    }
-  }
-
-  return root;
-}
-
-function parseInlineMap(text: string, target: Record<string, unknown>): void {
-  // Parse "key: value" pairs separated by newlines or within a single line
-  const parts = text.split(/,\s*/);
-  for (const part of parts) {
-    const m = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$/);
-    if (m) {
-      target[m[1]] = parseScalar(m[2].trim());
-    }
-  }
-}
-
-function parseScalar(value: string): string | number | boolean {
-  if (value === "true") return true;
-  if (value === "false") return false;
-  if (value === "null" || value === "~") return "";
-  // Strip surrounding quotes
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  const num = Number(value);
-  if (!isNaN(num) && value !== "") return num;
-  return value;
+  const result = yaml.load(text);
+  if (result === null || result === undefined) return {};
+  if (typeof result !== "object" || Array.isArray(result)) return {};
+  return result as Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------

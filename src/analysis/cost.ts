@@ -110,7 +110,7 @@ function buildCostPrompt(
   );
   lines.push(`File: ${filename}`);
   lines.push("```sql");
-  lines.push(content);
+  lines.push(content.replace(/```/g, "\\`\\`\\`"));
   lines.push("```");
 
   return lines.join("\n");
