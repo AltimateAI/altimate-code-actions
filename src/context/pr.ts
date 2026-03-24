@@ -108,10 +108,19 @@ export function getChangedDBTModels(
 ): ChangedFile[] {
   if (!dbtProjectDir) return ctx.dbtFiles;
 
-  const prefix = dbtProjectDir.endsWith("/")
-    ? dbtProjectDir
-    : `${dbtProjectDir}/`;
+  // dbtProjectDir is absolute, filenames are relative — convert to relative
+  const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  let relativeDir = dbtProjectDir;
+  if (dbtProjectDir.startsWith(workspace)) {
+    relativeDir = dbtProjectDir.slice(workspace.length).replace(/^\//, "");
+  }
 
+  // If dbt project is at repo root, all dbt files match
+  if (!relativeDir || relativeDir === "." || relativeDir === "./") {
+    return ctx.dbtFiles;
+  }
+
+  const prefix = relativeDir.endsWith("/") ? relativeDir : `${relativeDir}/`;
   return ctx.dbtFiles.filter((f) => f.filename.startsWith(prefix));
 }
 

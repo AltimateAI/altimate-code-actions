@@ -27496,7 +27496,15 @@ function getChangedSQLFiles(ctx, maxFiles) {
 }
 function getChangedDBTModels(ctx, dbtProjectDir) {
   if (!dbtProjectDir) return ctx.dbtFiles;
-  const prefix = dbtProjectDir.endsWith("/") ? dbtProjectDir : `${dbtProjectDir}/`;
+  const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  let relativeDir = dbtProjectDir;
+  if (dbtProjectDir.startsWith(workspace)) {
+    relativeDir = dbtProjectDir.slice(workspace.length).replace(/^\//, "");
+  }
+  if (!relativeDir || relativeDir === "." || relativeDir === "./") {
+    return ctx.dbtFiles;
+  }
+  const prefix = relativeDir.endsWith("/") ? relativeDir : `${relativeDir}/`;
   return ctx.dbtFiles.filter((f) => f.filename.startsWith(prefix));
 }
 function isInteractiveMention(triggers) {
