@@ -1,8 +1,8 @@
 # Dependencies
 node_modules/
 
-# Build output — committed only on release branches
-dist/
+# Build output — dist/ MUST be committed for GitHub Actions to work
+# dist/
 
 # Bun
 bun.lockb
