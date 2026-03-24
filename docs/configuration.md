@@ -301,6 +301,12 @@ Inline comments appear directly in the "Files changed" tab, making it easier to 
 
 Only issues at `error` or `critical` severity are posted as inline comments. Lower-severity issues appear only in the summary comment.
 
+## Mermaid DAG Visualization
+
+When `impact_analysis: true`, the PR comment includes a Mermaid dependency graph showing the blast radius of changed models. Changed models are highlighted in orange and downstream exposures in blue.
+
+GitHub renders Mermaid diagrams natively inside markdown code blocks — no additional setup, plugins, or configuration is required. The graph appears inline in the PR comment on any GitHub.com repository.
+
 ## Interactive Commands
 
 When `interactive: true` (the default), developers can trigger specific analyses by commenting on the PR. The action listens for trigger phrases configured via the `mentions` input.

@@ -23,8 +23,10 @@ Altimate Code Actions brings production-grade SQL analysis, dbt impact assessmen
 
 | | Capability | Description |
 |---|---|---|
+| :zap: | **Executive Summary** | One-line scope, impact, cost, and severity overview at the top of every review |
 | :mag: | **SQL Quality Analysis** | Detects anti-patterns, performance issues, and correctness bugs across 19 rule categories |
 | :deciduous_tree: | **dbt Impact Analysis** | Maps changed models to downstream dependencies, exposures, and tests in your dbt DAG |
+| :world_map: | **Mermaid DAG Visualization** | Colored dependency graph rendered inline using GitHub-native Mermaid |
 | :moneybag: | **Cost Estimation** | Estimates query cost deltas so you catch expensive changes before they hit production |
 | :shield: | **PII Detection** | Identifies personally identifiable information across 15 categories to prevent data leaks |
 | :speech_balloon: | **Inline Comments** | Critical issues posted directly on diff lines for faster triage |
@@ -89,17 +91,11 @@ When Altimate reviews your pull request, it posts a compact, structured comment 
 ```
 ## Altimate Code Review
 
-| Files | Issues | Impact | Cost Delta |
-|-------|--------|--------|------------|
-| 3     | 5      | 42/100 | +$6.30/mo  |
-
-<details><summary>:red_circle: Errors (1)</summary>
+**3 files · 5 issues (1 error) · impact 42/100 · +$6.30/mo**
 
 | File | Line | Rule | Message | Fix |
 |------|------|------|---------|-----|
 | stg_orders.sql | 14 | no-select-star | Avoid SELECT * | Enumerate columns explicitly |
-
-</details>
 
 <details><summary>:warning: Warnings (2)</summary>
 
@@ -119,22 +115,27 @@ When Altimate reviews your pull request, it posts a compact, structured comment 
 
 </details>
 
-### Impact Analysis
+### Blast Radius
 
-stg_orders ─┬─ dim_customers
-             └─ rpt_daily_revenue ─── Revenue Dashboard
-fct_revenue ─┬─ rpt_daily_revenue
-              └─ Executive KPI Report
+```mermaid
+graph LR
+  stg_orders:::changed --> dim_customers
+  stg_orders:::changed --> rpt_daily_revenue --> Revenue_Dashboard:::exposure
+  fct_revenue:::changed --> rpt_daily_revenue
+  fct_revenue:::changed --> Executive_KPI_Report:::exposure
+  classDef changed fill:#f96,stroke:#333
+  classDef exposure fill:#69f,stroke:#333
+```
 
 7 tests cover modified or downstream models
 
 ### Cost Estimation
 
-| Model | Before | After | Delta |
-|-------|--------|-------|-------|
-| fct_revenue | $12.40/mo | $18.70/mo | +$6.30/mo |
+| Model | Before | After | Delta | Root Cause |
+|-------|--------|-------|-------|------------|
+| fct_revenue | $12.40/mo | $18.70/mo | +$6.30/mo | Added full table scan |
 
-<sub><a href="https://github.com/AltimateAI/altimate-code-actions">Altimate Code</a> · <a href="https://github.com/AltimateAI/altimate-code-actions/blob/main/docs/configuration.md">Docs</a></sub>
+<sub><a href="https://github.com/AltimateAI/altimate-code-actions">Altimate Code</a> · <a href="https://github.com/AltimateAI/altimate-code-actions/blob/main/docs/configuration.md">Docs</a> · 19 rules</sub>
 ```
 
 When `comment_mode: both` is configured, critical issues are also posted as inline review comments directly on the affected diff lines.

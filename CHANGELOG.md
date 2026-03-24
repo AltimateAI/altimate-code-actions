@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-24
+
+### Added
+- **Executive one-line summary** — scope, impact, cost, severity in a single scannable line
+- **Mermaid DAG blast radius** — colored dependency graph rendered inline (GitHub-native)
+- **Cost before/after table** — per-model cost with delta and root cause
+- **Fix suggestions in issues table** — every issue shows how to fix it inline
+- **Critical issues auto-expand** — not hidden behind collapsible sections
+
+### Changed
+- PR comment now ~6 lines for clean PRs (was ~8)
+- Mermaid replaces ASCII DAG for richer visualization
+- Footer shows rule count
+
 ## [0.2.0] - 2026-03-24
 
 ### Added

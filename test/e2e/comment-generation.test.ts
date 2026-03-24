@@ -40,7 +40,7 @@ function makeIssue(overrides: Partial<SQLIssue> = {}): SQLIssue {
   };
 }
 
-describe("PR Comment Generation", () => {
+describe("PR Comment Generation v0.3", () => {
   it("returns null when no SQL files were analyzed", () => {
     const report = makeReport({ filesAnalyzed: 0 });
     expect(buildComment(report)).toBeNull();
@@ -55,29 +55,47 @@ describe("PR Comment Generation", () => {
     assertCommentFormat(comment);
   });
 
-  it("shows pass header and summary table for clean PR", () => {
+  it("shows executive line and summary table for clean PR", () => {
     const report = makeReport({ filesAnalyzed: 3, issuesFound: 0 });
     const comment = buildComment(report)!;
 
-    expect(comment).toContain("All checks passed");
+    // Executive line
+    expect(comment).toContain("all checks passed");
+    expect(comment).toContain("\u2705");
+    // Summary table
     expect(comment).toContain("| Check | Result | Details |");
-    expect(comment).toContain("0 issues in 3 files");
+    expect(comment).toContain("SQL Quality");
+    expect(comment).toContain("3 files analyzed");
     // No collapsible sections for clean PR
     expect(comment).not.toContain("<details>");
   });
 
-  it("includes collapsible issues section when issues exist", () => {
+  it("includes collapsible issues section when warnings exist", () => {
     const report = makeReport({
       issues: [
-        makeIssue({ severity: Severity.Error, message: "Missing GROUP BY" }),
+        makeIssue({ severity: Severity.Warning, message: "Missing GROUP BY" }),
       ],
       issuesFound: 1,
     });
     const comment = buildComment(report)!;
 
-    assertCommentHasSeverity(comment, "error");
+    assertCommentHasSeverity(comment, "warning");
     expect(comment).toContain("<details>");
     expect(comment).toContain("Missing GROUP BY");
+  });
+
+  it("auto-expands critical issues (not in <details>)", () => {
+    const report = makeReport({
+      issues: [
+        makeIssue({ severity: Severity.Critical, message: "Critical failure" }),
+      ],
+      issuesFound: 1,
+    });
+    const comment = buildComment(report)!;
+
+    assertCommentHasSeverity(comment, "critical");
+    expect(comment).toContain("### \u274C 1 critical issue");
+    expect(comment).toContain("Critical failure");
   });
 
   it("does not include issues section when no issues", () => {
@@ -88,7 +106,7 @@ describe("PR Comment Generation", () => {
     assertCommentMissingSection(comment, "warning");
   });
 
-  it("includes DAG impact section when dbt data present", () => {
+  it("includes Mermaid DAG blast radius when dbt data present", () => {
     const impact: ImpactResult = {
       modifiedModels: ["stg_orders"],
       downstreamModels: ["orders", "revenue"],
@@ -99,13 +117,30 @@ describe("PR Comment Generation", () => {
     const report = makeReport({ impact, impactScore: 65 });
     const comment = buildComment(report)!;
 
-    assertCommentHasSection(comment, "DAG Impact");
-    expect(comment).toContain("stg_orders");
-    expect(comment).toContain("orders");
-    expect(comment).toContain("3 models affected");
+    assertCommentHasSection(comment, "Blast Radius");
+    expect(comment).toContain("```mermaid");
+    expect(comment).toContain("graph LR");
+    expect(comment).toContain("stg_orders:::modified");
+    expect(comment).toContain("orders:::downstream");
+    expect(comment).toContain("2 downstream models");
   });
 
-  it("includes cost section when cost estimates provided", () => {
+  it("includes exposures in Mermaid DAG with purple class", () => {
+    const impact: ImpactResult = {
+      modifiedModels: ["stg_orders"],
+      downstreamModels: ["fct_revenue"],
+      affectedExposures: ["exec_dashboard"],
+      affectedTests: [],
+      impactScore: 70,
+    };
+    const report = makeReport({ impact, impactScore: 70 });
+    const comment = buildComment(report)!;
+
+    expect(comment).toContain("exec_dashboard:::exposure");
+    expect(comment).toContain("classDef exposure fill:#845ef7");
+  });
+
+  it("includes cost section with before/after/delta/cause", () => {
     const costEstimates: CostEstimate[] = [
       {
         file: "models/orders.sql",
@@ -114,6 +149,7 @@ describe("PR Comment Generation", () => {
         costBefore: 5.0,
         costAfter: 17.5,
         currency: "USD",
+        explanation: "Full table scan",
       },
     ];
     const report = makeReport({
@@ -125,6 +161,20 @@ describe("PR Comment Generation", () => {
     assertCommentHasSection(comment, "Cost Impact");
     expect(comment).toContain("$12.50");
     expect(comment).toContain("fct_orders");
+    expect(comment).toContain("| Model | Before | After | Delta | Cause |");
+    expect(comment).toContain("Full table scan");
+  });
+
+  it("shows cost delta in executive line", () => {
+    const report = makeReport({
+      estimatedCostDelta: 1.6,
+      costEstimates: [
+        { file: "a.sql", costDelta: 1.6, currency: "USD" },
+      ],
+    });
+    const comment = buildComment(report)!;
+
+    expect(comment).toContain("`+$1.60/mo`");
   });
 
   it("respects severity grouping (critical first, info last)", () => {
@@ -158,8 +208,8 @@ describe("PR Comment Generation", () => {
     const comment = buildComment(report)!;
 
     assertCommentFormat(comment);
-    expect(comment).toContain("All checks passed");
-    expect(comment).toContain("0 issues in 1 files");
+    expect(comment).toContain("all checks passed");
+    expect(comment).toContain("1 files analyzed");
   });
 
   it("truncates long comments to within GitHub limit", () => {
@@ -185,7 +235,7 @@ describe("PR Comment Generation", () => {
     const report = makeReport();
     const comment = buildComment(report)!;
 
-    expect(comment).toContain("v0.2.0");
+    expect(comment).toContain("v0.3.0");
     expect(comment).toContain("Configure");
     expect(comment).toContain("Feedback");
     expect(comment).toContain("Altimate Code");
@@ -201,7 +251,7 @@ describe("PR Comment Generation", () => {
     expect(comment).toContain("42");
   });
 
-  it("generates ASCII DAG with tree branches", () => {
+  it("generates ASCII DAG with tree branches (legacy)", () => {
     const impact: ImpactResult = {
       modifiedModels: ["stg_orders"],
       downstreamModels: ["fct_revenue", "dim_customers"],
@@ -219,5 +269,55 @@ describe("PR Comment Generation", () => {
     expect(dag).toContain("stg_orders");
     expect(dag).toContain("fct_revenue");
     expect(dag).toContain("dim_customers");
+  });
+
+  it("issues table includes numbered rows with Fix column", () => {
+    const report = makeReport({
+      issues: [
+        makeIssue({
+          severity: Severity.Warning,
+          message: "SELECT * detected",
+          suggestion: "List columns explicitly",
+          line: 14,
+          file: "fct_revenue.sql",
+        }),
+        makeIssue({
+          severity: Severity.Warning,
+          message: "Non-deterministic CURRENT_DATE",
+          suggestion: "Use {{ run_date }} variable",
+          line: 23,
+          file: "fct_revenue.sql",
+        }),
+      ],
+      issuesFound: 2,
+    });
+    const comment = buildComment(report)!;
+
+    expect(comment).toContain("| # | File | Line | Issue | Fix |");
+    expect(comment).toContain("| 1 |");
+    expect(comment).toContain("| 2 |");
+    expect(comment).toContain("List columns explicitly");
+    expect(comment).toContain("Use {{ run_date }} variable");
+  });
+
+  it("executive line shows model counts and downstream", () => {
+    const impact: ImpactResult = {
+      modifiedModels: ["stg_orders", "stg_payments"],
+      downstreamModels: ["fct_revenue", "dim_customers"],
+      affectedExposures: ["exec_dashboard"],
+      affectedTests: [],
+      impactScore: 80,
+    };
+    const report = makeReport({
+      impact,
+      impactScore: 80,
+      issues: [makeIssue({ severity: Severity.Warning })],
+      issuesFound: 1,
+    });
+    const comment = buildComment(report)!;
+
+    expect(comment).toContain("`2 models` modified");
+    expect(comment).toContain("`2 downstream`");
+    expect(comment).toContain("`1 exposure` at risk");
   });
 });
