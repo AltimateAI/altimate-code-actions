@@ -16,7 +16,6 @@ import {
 import { parseCommand } from "./interactive/commands.js";
 import { handleCommand } from "./interactive/handler.js";
 import { detectDBTProject, getManifest } from "./context/dbt.js";
-import { analyzeLightweightImpact } from "./context/dbt-lightweight.js";
 import { analyzeSQLFiles } from "./analysis/sql-review.js";
 import { analyzeImpact } from "./analysis/impact.js";
 import { estimateCost, getTotalCostDelta } from "./analysis/cost.js";
@@ -199,9 +198,31 @@ async function runAnalyses(
         return analyzeImpact(dbtFiles, manifest, dbtProjectDir);
       }
 
-      // Lightweight fallback: parse ref() calls directly from SQL files
-      core.info("No manifest — using lightweight ref() parsing for impact analysis");
-      return analyzeLightweightImpact(dbtFiles, dbtProjectDir);
+      // Fallback: use altimate-code CLI for impact analysis (deterministic, no LLM needed)
+      core.info("No manifest — attempting impact analysis via altimate-code CLI");
+      try {
+        const modelNames = dbtFiles.map((f) => f.filename.replace(/\.sql$/, "").split("/").pop()!);
+        const prompt = `Run impact_analysis for the following dbt models: ${modelNames.join(", ")}. Return a JSON object with: modifiedModels (string[]), downstreamModels (string[]), affectedExposures (string[]), affectedTests (string[]), impactScore (number 0-100).`;
+        const result = await runCLI(
+          ["run", "--format", "json", "--prompt", prompt],
+          { cwd: dbtProjectDir, timeout: 120_000, env: {} },
+        );
+        if (result.json && typeof result.json === "object") {
+          const data = result.json as Record<string, unknown>;
+          return {
+            modifiedModels: (data.modifiedModels as string[]) ?? modelNames,
+            downstreamModels: (data.downstreamModels as string[]) ?? [],
+            affectedExposures: (data.affectedExposures as string[]) ?? [],
+            affectedTests: (data.affectedTests as string[]) ?? [],
+            impactScore: typeof data.impactScore === "number" ? data.impactScore : 0,
+          };
+        }
+      } catch (err) {
+        core.warning(`CLI impact analysis failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      core.info("Impact analysis unavailable — no manifest and CLI fallback failed");
+      return null;
     })(),
 
     // Cost estimation
