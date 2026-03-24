@@ -1,0 +1,21 @@
+[submodule "test/e2e/fixtures/jaffle-shop"]
+	path = test/e2e/fixtures/jaffle-shop
+	url = https://github.com/dbt-labs/jaffle-shop.git
+[submodule "test/e2e/fixtures/jaffle-shop-classic"]
+	path = test/e2e/fixtures/jaffle-shop-classic
+	url = https://github.com/dbt-labs/jaffle-shop-classic.git
+[submodule "test/e2e/fixtures/mrr-playbook"]
+	path = test/e2e/fixtures/mrr-playbook
+	url = https://github.com/dbt-labs/mrr-playbook.git
+[submodule "test/e2e/fixtures/dbt-artifacts"]
+	path = test/e2e/fixtures/dbt-artifacts
+	url = https://github.com/brooklyn-data/dbt_artifacts.git
+[submodule "test/e2e/fixtures/dbt-date"]
+	path = test/e2e/fixtures/dbt-date
+	url = https://github.com/calogica/dbt-date.git
+[submodule "test/e2e/fixtures/dbt-utils"]
+	path = test/e2e/fixtures/dbt-utils
+	url = https://github.com/dbt-labs/dbt-utils.git
+[submodule "test/e2e/fixtures/sakila"]
+	path = test/e2e/fixtures/sakila
+	url = https://github.com/jOOQ/sakila.git

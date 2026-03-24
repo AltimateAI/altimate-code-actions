@@ -1,0 +1,203 @@
+name: "Altimate SQL Review"
+description: "SQL quality analysis — detect anti-patterns, formatting issues, and performance problems"
+branding:
+  icon: "search"
+  color: "blue"
+
+inputs:
+  model:
+    description: "LLM model to use for AI-powered analysis (e.g. claude-sonnet-4-20250514, gpt-4o)"
+    required: true
+  severity_threshold:
+    description: "Minimum severity to report: info, warning, error, critical"
+    default: "warning"
+  dialect:
+    description: "SQL dialect: snowflake, bigquery, postgres, redshift, databricks, mysql, auto"
+    default: "auto"
+  fail_on:
+    description: "Fail the action if issues at this severity or above are found: none, error, critical"
+    default: "none"
+  use_github_token:
+    description: "Use the default GITHUB_TOKEN for API calls instead of a custom token"
+    default: "false"
+  config_path:
+    description: "Path to .altimate.yml configuration file"
+    default: ".altimate.yml"
+  max_files:
+    description: "Maximum number of SQL files to analyze (0 = unlimited)"
+    default: "0"
+  comment_mode:
+    description: "How to post results: single (one summary comment), inline (per-line comments), both"
+    default: "single"
+  include:
+    description: "Glob patterns for files to include (comma-separated)"
+    default: ""
+  exclude:
+    description: "Glob patterns for files to exclude (comma-separated)"
+    default: ""
+
+outputs:
+  issues_found:
+    description: "Total number of issues found"
+    value: ${{ steps.review.outputs.issues_found }}
+  report_json:
+    description: "Full JSON report of all findings"
+    value: ${{ steps.review.outputs.report_json }}
+  max_severity:
+    description: "Highest severity found across all issues"
+    value: ${{ steps.review.outputs.max_severity }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.model }}" ]; then
+          echo "::error::Input 'model' is required"
+          exit 1
+        fi
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    - name: Install altimate-code CLI
+      shell: bash
+      run: |
+        npm install -g @anthropic-ai/claude-code@latest 2>/dev/null || true
+        echo "CLI installed"
+
+    - name: Load configuration
+      id: config
+      shell: bash
+      env:
+        CONFIG_PATH: ${{ inputs.config_path }}
+        INPUT_SEVERITY: ${{ inputs.severity_threshold }}
+        INPUT_DIALECT: ${{ inputs.dialect }}
+        INPUT_FAIL_ON: ${{ inputs.fail_on }}
+        INPUT_COMMENT_MODE: ${{ inputs.comment_mode }}
+        INPUT_MAX_FILES: ${{ inputs.max_files }}
+        INPUT_INCLUDE: ${{ inputs.include }}
+        INPUT_EXCLUDE: ${{ inputs.exclude }}
+      run: |
+        # Load config from .altimate.yml if it exists, then overlay action inputs
+        if [ -f "$CONFIG_PATH" ]; then
+          echo "Found config at $CONFIG_PATH"
+          echo "config_exists=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "No config file found at $CONFIG_PATH — using action inputs only"
+          echo "config_exists=false" >> "$GITHUB_OUTPUT"
+        fi
+        echo "severity_threshold=${INPUT_SEVERITY}" >> "$GITHUB_OUTPUT"
+        echo "dialect=${INPUT_DIALECT}" >> "$GITHUB_OUTPUT"
+        echo "fail_on=${INPUT_FAIL_ON}" >> "$GITHUB_OUTPUT"
+        echo "comment_mode=${INPUT_COMMENT_MODE}" >> "$GITHUB_OUTPUT"
+        echo "max_files=${INPUT_MAX_FILES}" >> "$GITHUB_OUTPUT"
+
+    - name: Get changed SQL files
+      id: files
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.use_github_token == 'true' && github.token || env.GITHUB_TOKEN }}
+      run: |
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        if [ -z "$PR_NUMBER" ]; then
+          echo "::error::This action must run on a pull_request event"
+          exit 1
+        fi
+
+        # Fetch changed files from the PR
+        FILES=$(gh pr diff "$PR_NUMBER" --name-only 2>/dev/null | grep -E '\.(sql|sqlx)$' || true)
+
+        if [ -z "$FILES" ]; then
+          echo "No SQL files changed in this PR"
+          echo "sql_files=" >> "$GITHUB_OUTPUT"
+          echo "file_count=0" >> "$GITHUB_OUTPUT"
+        else
+          FILE_COUNT=$(echo "$FILES" | wc -l | tr -d ' ')
+          echo "Found $FILE_COUNT SQL file(s)"
+          echo "sql_files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run SQL review
+      id: review
+      if: steps.files.outputs.file_count != '0'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.use_github_token == 'true' && github.token || env.GITHUB_TOKEN }}
+        ALTIMATE_MODEL: ${{ inputs.model }}
+        ALTIMATE_CONFIG_PATH: ${{ inputs.config_path }}
+      run: |
+        # Build the analysis command
+        ARGS="--mode static"
+        ARGS="$ARGS --severity-threshold ${{ steps.config.outputs.severity_threshold }}"
+        ARGS="$ARGS --dialect ${{ steps.config.outputs.dialect }}"
+        ARGS="$ARGS --output json"
+
+        MAX_FILES="${{ steps.config.outputs.max_files }}"
+        if [ "$MAX_FILES" != "0" ]; then
+          ARGS="$ARGS --max-files $MAX_FILES"
+        fi
+
+        echo "Running SQL review with: altimate-code sql-review $ARGS"
+
+        # Run the review and capture output
+        REPORT=$(altimate-code sql-review $ARGS 2>&1) || true
+
+        # Parse results
+        ISSUES_FOUND=$(echo "$REPORT" | jq -r '.issuesFound // 0' 2>/dev/null || echo "0")
+        MAX_SEVERITY=$(echo "$REPORT" | jq -r '.maxSeverity // "none"' 2>/dev/null || echo "none")
+
+        echo "issues_found=$ISSUES_FOUND" >> "$GITHUB_OUTPUT"
+        echo "max_severity=$MAX_SEVERITY" >> "$GITHUB_OUTPUT"
+
+        # Store full report for the output
+        echo "report_json<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$REPORT" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+        echo "SQL review complete: $ISSUES_FOUND issue(s) found (max severity: $MAX_SEVERITY)"
+
+    - name: Handle no SQL files
+      if: steps.files.outputs.file_count == '0'
+      id: no-files
+      shell: bash
+      run: |
+        echo "issues_found=0" >> "$GITHUB_OUTPUT"
+        echo "max_severity=none" >> "$GITHUB_OUTPUT"
+        echo 'report_json={"issues":[],"filesAnalyzed":0,"issuesFound":0}' >> "$GITHUB_OUTPUT"
+        echo "No SQL files to review"
+
+    - name: Check fail threshold
+      if: inputs.fail_on != 'none' && steps.review.outputs.issues_found != '0'
+      shell: bash
+      run: |
+        FAIL_ON="${{ inputs.fail_on }}"
+        MAX_SEVERITY="${{ steps.review.outputs.max_severity }}"
+        ISSUES="${{ steps.review.outputs.issues_found }}"
+
+        # Severity ordering: info=0, warning=1, error=2, critical=3
+        severity_to_num() {
+          case "$1" in
+            info) echo 0 ;;
+            warning) echo 1 ;;
+            error) echo 2 ;;
+            critical) echo 3 ;;
+            *) echo -1 ;;
+          esac
+        }
+
+        FAIL_NUM=$(severity_to_num "$FAIL_ON")
+        MAX_NUM=$(severity_to_num "$MAX_SEVERITY")
+
+        if [ "$MAX_NUM" -ge "$FAIL_NUM" ]; then
+          echo "::error::SQL review found $ISSUES issue(s) at severity '$MAX_SEVERITY' (threshold: '$FAIL_ON')"
+          exit 1
+        fi
+
+        echo "Issues found but below fail threshold ($MAX_SEVERITY < $FAIL_ON)"

@@ -1,0 +1,205 @@
+name: "Altimate dbt Impact Analysis"
+description: "Analyze the downstream impact of dbt model changes — affected models, exposures, and tests"
+branding:
+  icon: "git-branch"
+  color: "orange"
+
+inputs:
+  model:
+    description: "LLM model to use for AI-powered analysis (e.g. claude-sonnet-4-20250514, gpt-4o)"
+    required: true
+  dbt_project_dir:
+    description: "Path to the dbt project directory"
+    default: "."
+  manifest_path:
+    description: "Path to a pre-compiled dbt manifest.json (skips compilation if provided)"
+    default: ""
+  warn_threshold:
+    description: "Warn if more than N downstream models are affected"
+    default: "10"
+  fail_threshold:
+    description: "Fail the action if more than N downstream models are affected"
+    default: "50"
+  use_github_token:
+    description: "Use the default GITHUB_TOKEN for API calls instead of a custom token"
+    default: "false"
+  config_path:
+    description: "Path to .altimate.yml configuration file"
+    default: ".altimate.yml"
+
+outputs:
+  impact_score:
+    description: "Aggregate impact score 0-100 (higher = more risk)"
+    value: ${{ steps.analysis.outputs.impact_score }}
+  affected_models:
+    description: "JSON array of downstream model names affected by this change"
+    value: ${{ steps.analysis.outputs.affected_models }}
+  affected_exposures:
+    description: "JSON array of exposures (dashboards, reports) that reference affected models"
+    value: ${{ steps.analysis.outputs.affected_exposures }}
+  affected_tests:
+    description: "JSON array of tests that cover affected models"
+    value: ${{ steps.analysis.outputs.affected_tests }}
+  modified_models:
+    description: "JSON array of models directly modified in this PR"
+    value: ${{ steps.analysis.outputs.modified_models }}
+  report_json:
+    description: "Full JSON impact report"
+    value: ${{ steps.analysis.outputs.report_json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.model }}" ]; then
+          echo "::error::Input 'model' is required"
+          exit 1
+        fi
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    - name: Detect dbt project
+      id: detect
+      shell: bash
+      run: |
+        DBT_DIR="${{ inputs.dbt_project_dir }}"
+        if [ ! -f "$DBT_DIR/dbt_project.yml" ]; then
+          echo "::error::No dbt_project.yml found in '$DBT_DIR'. Set dbt_project_dir to point to your dbt project."
+          exit 1
+        fi
+        echo "dbt_dir=$DBT_DIR" >> "$GITHUB_OUTPUT"
+        echo "Found dbt project at $DBT_DIR"
+
+    - name: Resolve manifest
+      id: manifest
+      shell: bash
+      run: |
+        MANIFEST="${{ inputs.manifest_path }}"
+        DBT_DIR="${{ steps.detect.outputs.dbt_dir }}"
+
+        if [ -n "$MANIFEST" ] && [ -f "$MANIFEST" ]; then
+          echo "Using provided manifest at $MANIFEST"
+          echo "manifest_path=$MANIFEST" >> "$GITHUB_OUTPUT"
+          echo "needs_compile=false" >> "$GITHUB_OUTPUT"
+        elif [ -f "$DBT_DIR/target/manifest.json" ]; then
+          echo "Found existing manifest at $DBT_DIR/target/manifest.json"
+          echo "manifest_path=$DBT_DIR/target/manifest.json" >> "$GITHUB_OUTPUT"
+          echo "needs_compile=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "No manifest found — will need to parse project directly"
+          echo "manifest_path=" >> "$GITHUB_OUTPUT"
+          echo "needs_compile=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Get changed files
+      id: files
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.use_github_token == 'true' && github.token || env.GITHUB_TOKEN }}
+      run: |
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        if [ -z "$PR_NUMBER" ]; then
+          echo "::error::This action must run on a pull_request event"
+          exit 1
+        fi
+
+        DBT_DIR="${{ steps.detect.outputs.dbt_dir }}"
+        PREFIX=""
+        if [ "$DBT_DIR" != "." ]; then
+          PREFIX="$DBT_DIR/"
+        fi
+
+        # Get all changed files that could affect dbt models
+        FILES=$(gh pr diff "$PR_NUMBER" --name-only 2>/dev/null | grep -E '\.(sql|sqlx|yml|yaml|py)$' || true)
+
+        if [ -n "$PREFIX" ]; then
+          FILES=$(echo "$FILES" | grep "^$PREFIX" || true)
+        fi
+
+        if [ -z "$FILES" ]; then
+          echo "No dbt-related files changed"
+          echo "has_changes=false" >> "$GITHUB_OUTPUT"
+        else
+          FILE_COUNT=$(echo "$FILES" | wc -l | tr -d ' ')
+          echo "Found $FILE_COUNT dbt-related file(s)"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          echo "changed_files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run impact analysis
+      id: analysis
+      if: steps.files.outputs.has_changes == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.use_github_token == 'true' && github.token || env.GITHUB_TOKEN }}
+        ALTIMATE_MODEL: ${{ inputs.model }}
+        ALTIMATE_CONFIG_PATH: ${{ inputs.config_path }}
+      run: |
+        DBT_DIR="${{ steps.detect.outputs.dbt_dir }}"
+        MANIFEST="${{ steps.manifest.outputs.manifest_path }}"
+
+        ARGS="--dbt-project-dir $DBT_DIR"
+        if [ -n "$MANIFEST" ]; then
+          ARGS="$ARGS --manifest $MANIFEST"
+        fi
+        ARGS="$ARGS --output json"
+
+        echo "Running impact analysis: altimate-code impact-analysis $ARGS"
+        REPORT=$(altimate-code impact-analysis $ARGS 2>&1) || true
+
+        # Parse results
+        IMPACT_SCORE=$(echo "$REPORT" | jq -r '.impactScore // 0' 2>/dev/null || echo "0")
+        AFFECTED=$(echo "$REPORT" | jq -r '.downstreamModels // []' 2>/dev/null || echo "[]")
+        EXPOSURES=$(echo "$REPORT" | jq -r '.affectedExposures // []' 2>/dev/null || echo "[]")
+        TESTS=$(echo "$REPORT" | jq -r '.affectedTests // []' 2>/dev/null || echo "[]")
+        MODIFIED=$(echo "$REPORT" | jq -r '.modifiedModels // []' 2>/dev/null || echo "[]")
+        AFFECTED_COUNT=$(echo "$AFFECTED" | jq 'length' 2>/dev/null || echo "0")
+
+        echo "impact_score=$IMPACT_SCORE" >> "$GITHUB_OUTPUT"
+        echo "affected_models=$AFFECTED" >> "$GITHUB_OUTPUT"
+        echo "affected_exposures=$EXPOSURES" >> "$GITHUB_OUTPUT"
+        echo "affected_tests=$TESTS" >> "$GITHUB_OUTPUT"
+        echo "modified_models=$MODIFIED" >> "$GITHUB_OUTPUT"
+        echo "report_json<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$REPORT" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+        echo "Impact analysis complete: score=$IMPACT_SCORE, $AFFECTED_COUNT downstream model(s) affected"
+
+        # Check warn threshold
+        WARN_THRESHOLD="${{ inputs.warn_threshold }}"
+        if [ "$AFFECTED_COUNT" -gt "$WARN_THRESHOLD" ]; then
+          echo "::warning::$AFFECTED_COUNT downstream models affected (warn threshold: $WARN_THRESHOLD)"
+        fi
+
+    - name: Handle no changes
+      if: steps.files.outputs.has_changes != 'true'
+      shell: bash
+      run: |
+        echo "impact_score=0" >> "$GITHUB_OUTPUT"
+        echo 'affected_models=[]' >> "$GITHUB_OUTPUT"
+        echo 'affected_exposures=[]' >> "$GITHUB_OUTPUT"
+        echo 'affected_tests=[]' >> "$GITHUB_OUTPUT"
+        echo 'modified_models=[]' >> "$GITHUB_OUTPUT"
+        echo 'report_json={"impactScore":0,"modifiedModels":[],"downstreamModels":[],"affectedExposures":[],"affectedTests":[]}' >> "$GITHUB_OUTPUT"
+        echo "No dbt files changed — nothing to analyze"
+
+    - name: Check fail threshold
+      if: steps.files.outputs.has_changes == 'true'
+      shell: bash
+      run: |
+        FAIL_THRESHOLD="${{ inputs.fail_threshold }}"
+        AFFECTED="${{ steps.analysis.outputs.affected_models }}"
+        AFFECTED_COUNT=$(echo "$AFFECTED" | jq 'length' 2>/dev/null || echo "0")
+
+        if [ "$AFFECTED_COUNT" -gt "$FAIL_THRESHOLD" ]; then
+          echo "::error::$AFFECTED_COUNT downstream models affected exceeds fail threshold of $FAIL_THRESHOLD"
+          exit 1
+        fi

@@ -1,0 +1,30 @@
+name: 'test_project_v19'
+version: '1.0.0'
+config-version: 2
+profile: 'test'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# v1.9 feature: all behavior change flags
+flags:
+  require_explicit_package_overrides_for_builtin_materializations: true
+  source_freshness_run_project_hooks: false
+  restrict_direct_pg_catalog_access: true
+
+models:
+  test_project_v19:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+      +contract:
+        enforced: true

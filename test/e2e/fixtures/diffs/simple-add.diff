@@ -1,0 +1,16 @@
+diff --git a/models/staging/stg_orders.sql b/models/staging/stg_orders.sql
+index abc1234..def5678 100644
+--- a/models/staging/stg_orders.sql
++++ b/models/staging/stg_orders.sql
+@@ -1,8 +1,12 @@
+ SELECT
+     order_id,
+     customer_id,
+-    status,
++    status AS order_status,
++    total_amount,
++    tax_amount,
++    discount_amount,
+     created_at
+ FROM raw.orders
++WHERE created_at >= '2024-01-01'

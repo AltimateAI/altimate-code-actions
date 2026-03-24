@@ -1,0 +1,7 @@
+test:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: 'target/test.duckdb'
+      threads: 4

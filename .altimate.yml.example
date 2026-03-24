@@ -1,0 +1,110 @@
+# Altimate Code Review Configuration
+# Place this file as .altimate.yml at the root of your repository.
+# All fields are optional — sensible defaults are applied for anything omitted.
+
+version: 1
+
+# ─── SQL Review ─────────────────────────────────────────────────────────────
+sql_review:
+  enabled: true
+  severity_threshold: warning  # info | warning | error | critical
+
+  rules:
+    select_star:
+      enabled: true
+      severity: warning
+    cartesian_join:
+      enabled: true
+      severity: error
+    missing_partition:
+      enabled: true
+      severity: warning
+    non_deterministic:
+      enabled: true
+      severity: warning
+    correlated_subquery:
+      enabled: true
+      severity: warning
+    implicit_type_cast:
+      enabled: true
+      severity: info
+    or_in_join:
+      enabled: true
+      severity: warning
+    missing_group_by:
+      enabled: true
+      severity: error
+    order_by_ordinal:
+      enabled: true
+      severity: info
+    union_without_all:
+      enabled: true
+      severity: info
+    nested_subquery:
+      enabled: true
+      severity: warning
+    missing_where_clause:
+      enabled: true
+      severity: warning
+    leading_wildcard_like:
+      enabled: true
+      severity: info
+    duplicate_column_alias:
+      enabled: true
+      severity: error
+
+  # Glob patterns for which files to include/exclude
+  include:
+    - "models/**/*.sql"
+    - "analyses/**/*.sql"
+  exclude:
+    - "models/staging/legacy/**"
+
+  # Custom patterns: flag SQL that matches these regexes
+  custom_patterns:
+    - name: no_delete_without_where
+      pattern: "DELETE\\s+FROM\\s+\\w+\\s*;"
+      message: "DELETE without WHERE clause"
+      severity: critical
+    - name: no_truncate
+      pattern: "\\bTRUNCATE\\b"
+      message: "TRUNCATE detected — use DELETE with WHERE for safer data removal"
+      severity: error
+
+# ─── Impact Analysis ────────────────────────────────────────────────────────
+impact_analysis:
+  enabled: true
+  warn_threshold: 10   # warn if > N downstream models affected
+  fail_threshold: 50   # fail if > N downstream models affected
+
+# ─── Cost Estimation ────────────────────────────────────────────────────────
+cost_estimation:
+  enabled: false
+  warn_threshold: 100  # warn if monthly cost delta > $N
+  fail_threshold: 0    # 0 = disabled
+
+# ─── PII Detection ─────────────────────────────────────────────────────────
+pii_detection:
+  enabled: true
+  categories:
+    - email
+    - ssn
+    - phone
+    - credit_card
+    - ip_address
+
+  # Custom PII column patterns
+  # custom_patterns:
+  #   - name: employee_id
+  #     column_pattern: "emp_id|employee_number"
+  #     severity: warning
+
+# ─── Comment Settings ──────────────────────────────────────────────────────
+comment:
+  mode: single            # single | inline | both
+  max_issues_shown: 20    # cap the number of issues in the summary
+  show_clean_files: false  # include files that passed with no issues
+
+# ─── Dialect ────────────────────────────────────────────────────────────────
+# "auto" detects dialect from file content and project settings.
+dialect: auto

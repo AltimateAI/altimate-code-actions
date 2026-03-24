@@ -1,0 +1,11 @@
+diff --git a/models/deprecated/old_model.sql b/models/deprecated/old_model.sql
+deleted file mode 100644
+index abc1234..0000000
+--- a/models/deprecated/old_model.sql
++++ /dev/null
+@@ -1,5 +0,0 @@
+-SELECT
+-    id,
+-    name,
+-    created_at
+-FROM raw.old_table

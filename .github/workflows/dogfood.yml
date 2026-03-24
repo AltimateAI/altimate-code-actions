@@ -1,0 +1,24 @@
+name: Dogfood
+
+on:
+  pull_request:
+    paths:
+      - "**.sql"
+      - "**.yml"
+      - "!.github/**"
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  self-review:
+    name: Self Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./
+        with:
+          model: anthropic/claude-haiku-4-5-20251001
+          mode: static

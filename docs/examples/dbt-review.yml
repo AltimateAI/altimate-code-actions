@@ -1,0 +1,53 @@
+# dbt Project Review with Impact Analysis
+#
+# Runs SQL analysis plus dbt DAG impact analysis to show which downstream
+# models, exposures, and tests are affected by the change.
+#
+# Prerequisites:
+# - An ANTHROPIC_API_KEY secret for AI-powered review
+# - A dbt project in the repository
+#
+# Copy this file to .github/workflows/altimate-review.yml in your repository.
+
+name: dbt Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    name: Altimate dbt Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: AltimateAI/altimate-code-actions@v1
+        id: review
+        with:
+          mode: full
+          impact_analysis: true
+          pii_check: true
+          # Set this to the path containing your dbt_project.yml
+          # Omit if dbt_project.yml is at the repository root
+          dbt_project_dir: ./
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Print summary
+        run: |
+          echo "Files analyzed: ${{ steps.review.outputs.files_analyzed }}"
+          echo "Issues found: ${{ steps.review.outputs.issues_found }}"
+          echo "Impact score: ${{ steps.review.outputs.impact_score }}/100"
+          echo "Comment: ${{ steps.review.outputs.comment_url }}"
+
+      # Optional: fail the PR if impact score is high
+      - name: Check impact threshold
+        if: steps.review.outputs.impact_score > 75
+        run: |
+          echo "::warning::High impact score (${{ steps.review.outputs.impact_score }}/100). Review downstream effects carefully."

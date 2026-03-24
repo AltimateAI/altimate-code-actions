@@ -1,0 +1,5 @@
+* @AltimateAI/core-team
+action.yml @AltimateAI/core-team @AltimateAI/devops
+.github/workflows/ @AltimateAI/devops
+src/ @AltimateAI/core-team
+test/ @AltimateAI/qa-team

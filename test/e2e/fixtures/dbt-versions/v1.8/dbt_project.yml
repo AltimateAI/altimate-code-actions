@@ -1,0 +1,29 @@
+name: 'test_project_v18'
+version: '1.0.0'
+config-version: 2
+profile: 'test'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# v1.8 feature: behavior change flags
+flags:
+  require_explicit_package_overrides_for_builtin_materializations: true
+  source_freshness_run_project_hooks: false
+
+models:
+  test_project_v18:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+      +contract:
+        enforced: true

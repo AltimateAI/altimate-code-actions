@@ -1,0 +1,57 @@
+# Full Review with Cost Estimation
+#
+# Runs all analysis features: SQL quality, AI review, dbt impact analysis,
+# PII detection, and query cost estimation against Snowflake.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY secret
+# - Snowflake credentials as secrets (SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD)
+# - A dbt project in the repository
+#
+# Copy this file to .github/workflows/altimate-review.yml in your repository.
+
+name: Altimate Full Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    name: Altimate Full Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: AltimateAI/altimate-code-actions@v1
+        id: review
+        with:
+          mode: full
+          sql_review: true
+          impact_analysis: true
+          cost_estimation: true
+          pii_check: true
+          warehouse_type: snowflake
+          dbt_project_dir: ./
+          comment_mode: both
+          fail_on: error
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: COMPUTE_WH
+          SNOWFLAKE_ROLE: ANALYST
+
+      - name: Print summary
+        run: |
+          echo "Files analyzed: ${{ steps.review.outputs.files_analyzed }}"
+          echo "Issues found: ${{ steps.review.outputs.issues_found }}"
+          echo "Impact score: ${{ steps.review.outputs.impact_score }}/100"
+          echo "Cost delta: \$${{ steps.review.outputs.cost_delta }}/mo"
+          echo "Comment: ${{ steps.review.outputs.comment_url }}"

@@ -1,0 +1,92 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: orders
+        columns:
+          - name: id
+            tests:
+              - not_null
+              - unique
+          - name: user_id
+            tests:
+              - not_null
+          - name: order_date
+            tests:
+              - not_null
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['placed', 'shipped', 'completed', 'returned', 'cancelled']
+      - name: payments
+        columns:
+          - name: id
+            tests:
+              - not_null
+              - unique
+          - name: order_id
+            tests:
+              - not_null
+
+models:
+  - name: stg_orders
+    description: "Staged orders using v1.9 microbatch incremental strategy"
+    columns:
+      - name: order_id
+        description: "Primary key"
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - not_null
+      - name: order_status
+        tests:
+          - accepted_values:
+              values: ['placed', 'shipped', 'completed', 'returned', 'cancelled']
+
+  - name: fct_orders
+    description: "Fact table for orders with payment totals"
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: order_id
+        description: "Primary key"
+        data_type: integer
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        data_type: integer
+        tests:
+          - not_null
+      - name: order_date
+        data_type: date
+      - name: order_status
+        data_type: varchar
+      - name: order_total
+        description: "Total payment amount for the order"
+        data_type: numeric
+        tests:
+          - not_null
+
+  # v1.9 feature: unit tests in schema.yml
+unit_tests:
+  - name: test_order_total_calculation
+    description: "Verify order_total is correctly computed from payments"
+    model: fct_orders
+    given:
+      - input: ref('stg_orders')
+        rows:
+          - {order_id: 1, customer_id: 100, order_date: '2024-01-15', order_status: 'completed'}
+          - {order_id: 2, customer_id: 101, order_date: '2024-01-16', order_status: 'placed'}
+      - input: ref('stg_payments')
+        rows:
+          - {order_id: 1, total_amount: 99.50}
+    expect:
+      rows:
+        - {order_id: 1, customer_id: 100, order_date: '2024-01-15', order_status: 'completed', order_total: 99.50}
+        - {order_id: 2, customer_id: 101, order_date: '2024-01-16', order_status: 'placed', order_total: 0}

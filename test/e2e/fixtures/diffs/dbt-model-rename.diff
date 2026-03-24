@@ -1,0 +1,69 @@
+diff --git a/models/marts/fct_orders.sql b/models/marts/fct_orders.sql
+deleted file mode 100644
+index a1b2c3d..0000000
+--- a/models/marts/fct_orders.sql
++++ /dev/null
+@@ -1,20 +0,0 @@
+-with orders as (
+-    select * from {{ ref('stg_orders') }}
+-),
+-
+-payments as (
+-    select * from {{ ref('stg_payments') }}
+-),
+-
+-final as (
+-    select
+-        orders.order_id,
+-        orders.customer_id,
+-        orders.order_date,
+-        orders.order_status,
+-        coalesce(payments.total_amount, 0) as order_total
+-    from orders
+-    left join payments on orders.order_id = payments.order_id
+-)
+-
+-select * from final
+diff --git a/models/marts/fct_completed_orders.sql b/models/marts/fct_completed_orders.sql
+new file mode 100644
+index 0000000..f7g8h9i
+--- /dev/null
++++ b/models/marts/fct_completed_orders.sql
+@@ -0,0 +1,22 @@
++with orders as (
++    select * from {{ ref('stg_orders') }}
++),
++
++payments as (
++    select * from {{ ref('stg_payments') }}
++),
++
++final as (
++    select
++        orders.order_id,
++        orders.customer_id,
++        orders.order_date,
++        orders.order_status,
++        coalesce(payments.total_amount, 0) as order_total
++    from orders
++    left join payments on orders.order_id = payments.order_id
++    where orders.order_status = 'completed'
++)
++
++select * from final
+diff --git a/models/schema.yml b/models/schema.yml
+index b2c3d4e..j1k2l3m 100644
+--- a/models/schema.yml
++++ b/models/schema.yml
+@@ -15,8 +15,8 @@ models:
+       - name: order_status
+         tests:
+           - accepted_values:
+               values: ['placed', 'shipped', 'completed', 'returned', 'cancelled']
+
+-  - name: fct_orders
+-    description: "Fact table for orders with payment totals"
++  - name: fct_completed_orders
++    description: "Fact table for completed orders with payment totals"
+     columns:
+       - name: order_id

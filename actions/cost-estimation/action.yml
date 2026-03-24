@@ -1,0 +1,203 @@
+name: "Altimate Cost Estimation"
+description: "Estimate the cost impact of SQL and dbt model changes on your data warehouse"
+branding:
+  icon: "dollar-sign"
+  color: "green"
+
+inputs:
+  model:
+    description: "LLM model to use for AI-powered analysis (e.g. claude-sonnet-4-20250514, gpt-4o)"
+    required: true
+  warehouse_type:
+    description: "Warehouse type: snowflake, bigquery, redshift, databricks"
+    required: true
+  warehouse_connection:
+    description: "JSON-encoded warehouse connection parameters (or use individual secrets below)"
+    default: ""
+  warehouse_account:
+    description: "Warehouse account identifier (Snowflake account, BigQuery project, etc.)"
+    default: ""
+  warehouse_database:
+    description: "Default database name"
+    default: ""
+  warehouse_schema:
+    description: "Default schema name"
+    default: ""
+  warehouse_role:
+    description: "Warehouse role (Snowflake-specific)"
+    default: ""
+  warehouse_warehouse:
+    description: "Compute warehouse name (Snowflake-specific)"
+    default: ""
+  dbt_project_dir:
+    description: "Path to the dbt project directory (if applicable)"
+    default: "."
+  warn_threshold:
+    description: "Warn if estimated cost delta exceeds this amount in USD"
+    default: "100"
+  fail_threshold:
+    description: "Fail the action if estimated cost delta exceeds this amount in USD"
+    default: "0"
+  use_github_token:
+    description: "Use the default GITHUB_TOKEN for API calls instead of a custom token"
+    default: "false"
+  config_path:
+    description: "Path to .altimate.yml configuration file"
+    default: ".altimate.yml"
+
+outputs:
+  estimated_cost_delta:
+    description: "Total estimated monthly cost change in USD (negative = savings)"
+    value: ${{ steps.estimate.outputs.estimated_cost_delta }}
+  cost_per_query:
+    description: "JSON object with per-file cost breakdowns"
+    value: ${{ steps.estimate.outputs.cost_per_query }}
+  report_json:
+    description: "Full JSON cost report"
+    value: ${{ steps.estimate.outputs.report_json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.model }}" ]; then
+          echo "::error::Input 'model' is required"
+          exit 1
+        fi
+        if [ -z "${{ inputs.warehouse_type }}" ]; then
+          echo "::error::Input 'warehouse_type' is required"
+          exit 1
+        fi
+
+        VALID_TYPES="snowflake bigquery redshift databricks"
+        TYPE="${{ inputs.warehouse_type }}"
+        if ! echo "$VALID_TYPES" | grep -qw "$TYPE"; then
+          echo "::error::Invalid warehouse_type '$TYPE'. Must be one of: $VALID_TYPES"
+          exit 1
+        fi
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    - name: Build connection config
+      id: connection
+      shell: bash
+      run: |
+        # Build connection JSON from individual inputs or use the provided JSON
+        CONNECTION="${{ inputs.warehouse_connection }}"
+
+        if [ -z "$CONNECTION" ] || [ "$CONNECTION" = "{}" ]; then
+          # Build from individual inputs
+          CONNECTION=$(cat <<CONN_EOF
+        {
+          "type": "${{ inputs.warehouse_type }}",
+          "account": "${{ inputs.warehouse_account }}",
+          "database": "${{ inputs.warehouse_database }}",
+          "schema": "${{ inputs.warehouse_schema }}",
+          "role": "${{ inputs.warehouse_role }}",
+          "warehouse": "${{ inputs.warehouse_warehouse }}"
+        }
+        CONN_EOF
+          )
+        fi
+
+        # Validate it's valid JSON
+        if ! echo "$CONNECTION" | jq . > /dev/null 2>&1; then
+          echo "::error::warehouse_connection is not valid JSON"
+          exit 1
+        fi
+
+        # Store connection (mask sensitive fields from logs)
+        echo "::add-mask::$(echo "$CONNECTION" | jq -r '.password // empty')"
+        echo "::add-mask::$(echo "$CONNECTION" | jq -r '.token // empty')"
+        echo "::add-mask::$(echo "$CONNECTION" | jq -r '.private_key // empty')"
+
+        echo "connection<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$CONNECTION" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+    - name: Get changed SQL files
+      id: files
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.use_github_token == 'true' && github.token || env.GITHUB_TOKEN }}
+      run: |
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        if [ -z "$PR_NUMBER" ]; then
+          echo "::error::This action must run on a pull_request event"
+          exit 1
+        fi
+
+        FILES=$(gh pr diff "$PR_NUMBER" --name-only 2>/dev/null | grep -E '\.(sql|sqlx)$' || true)
+
+        if [ -z "$FILES" ]; then
+          echo "No SQL files changed"
+          echo "has_changes=false" >> "$GITHUB_OUTPUT"
+        else
+          FILE_COUNT=$(echo "$FILES" | wc -l | tr -d ' ')
+          echo "Found $FILE_COUNT SQL file(s)"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run cost estimation
+      id: estimate
+      if: steps.files.outputs.has_changes == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.use_github_token == 'true' && github.token || env.GITHUB_TOKEN }}
+        ALTIMATE_MODEL: ${{ inputs.model }}
+        ALTIMATE_CONFIG_PATH: ${{ inputs.config_path }}
+        ALTIMATE_WAREHOUSE_CONNECTION: ${{ steps.connection.outputs.connection }}
+      run: |
+        ARGS="--warehouse-type ${{ inputs.warehouse_type }}"
+        ARGS="$ARGS --dbt-project-dir ${{ inputs.dbt_project_dir }}"
+        ARGS="$ARGS --output json"
+
+        echo "Running cost estimation: altimate-code cost-estimate $ARGS"
+        REPORT=$(altimate-code cost-estimate $ARGS 2>&1) || true
+
+        # Parse results
+        COST_DELTA=$(echo "$REPORT" | jq -r '.estimatedCostDelta // 0' 2>/dev/null || echo "0")
+        COST_PER_QUERY=$(echo "$REPORT" | jq -r '.costEstimates // []' 2>/dev/null || echo "[]")
+
+        echo "estimated_cost_delta=$COST_DELTA" >> "$GITHUB_OUTPUT"
+        echo "cost_per_query=$COST_PER_QUERY" >> "$GITHUB_OUTPUT"
+        echo "report_json<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$REPORT" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+        echo "Cost estimation complete: estimated delta = \$$COST_DELTA/month"
+
+        # Check warn threshold
+        WARN_THRESHOLD="${{ inputs.warn_threshold }}"
+        # Use awk for floating point comparison
+        SHOULD_WARN=$(echo "$COST_DELTA $WARN_THRESHOLD" | awk '{print ($1 > $2) ? "true" : "false"}')
+        if [ "$SHOULD_WARN" = "true" ]; then
+          echo "::warning::Estimated cost delta \$$COST_DELTA/month exceeds warn threshold of \$$WARN_THRESHOLD"
+        fi
+
+    - name: Handle no changes
+      if: steps.files.outputs.has_changes != 'true'
+      shell: bash
+      run: |
+        echo "estimated_cost_delta=0" >> "$GITHUB_OUTPUT"
+        echo 'cost_per_query=[]' >> "$GITHUB_OUTPUT"
+        echo 'report_json={"estimatedCostDelta":0,"costEstimates":[],"currency":"USD"}' >> "$GITHUB_OUTPUT"
+        echo "No SQL files changed — nothing to estimate"
+
+    - name: Check fail threshold
+      if: inputs.fail_threshold != '0' && steps.files.outputs.has_changes == 'true'
+      shell: bash
+      run: |
+        FAIL_THRESHOLD="${{ inputs.fail_threshold }}"
+        COST_DELTA="${{ steps.estimate.outputs.estimated_cost_delta }}"
+
+        SHOULD_FAIL=$(echo "$COST_DELTA $FAIL_THRESHOLD" | awk '{print ($1 > $2) ? "true" : "false"}')
+        if [ "$SHOULD_FAIL" = "true" ]; then
+          echo "::error::Estimated cost delta \$$COST_DELTA/month exceeds fail threshold of \$$FAIL_THRESHOLD"
+          exit 1
+        fi

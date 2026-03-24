@@ -1,0 +1,49 @@
+diff --git a/models/staging/stg_customers.sql b/models/staging/stg_customers.sql
+index a1b2c3d..e4f5g6h 100644
+--- a/models/staging/stg_customers.sql
++++ b/models/staging/stg_customers.sql
+@@ -4,12 +4,10 @@ with source as (
+
+ renamed as (
+     select
+         id as customer_id,
+-        first_name,
+-        last_name,
+-        first_name || ' ' || last_name as full_name,
++        full_name,
+         email,
+-        phone_number,
+         created_at,
+-        updated_at
++        updated_at,
++        customer_segment
+     from source
+ )
+diff --git a/models/schema.yml b/models/schema.yml
+index b2c3d4e..j1k2l3m 100644
+--- a/models/schema.yml
++++ b/models/schema.yml
+@@ -3,16 +3,14 @@ models:
+   - name: stg_customers
+     description: "Staged customer data"
+     columns:
+       - name: customer_id
+         tests:
+           - not_null
+           - unique
+-      - name: first_name
+-        tests:
+-          - not_null
+-      - name: last_name
++      - name: full_name
+         tests:
+           - not_null
+       - name: email
+         tests:
+           - not_null
+-      - name: phone_number
++      - name: customer_segment
++        description: "Customer tier: enterprise, mid-market, smb"
+         tests:
++          - accepted_values:
++              values: ['enterprise', 'mid-market', 'smb']

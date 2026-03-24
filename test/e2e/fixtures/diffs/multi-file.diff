@@ -1,0 +1,36 @@
+diff --git a/models/staging/stg_orders.sql b/models/staging/stg_orders.sql
+index abc1234..def5678 100644
+--- a/models/staging/stg_orders.sql
++++ b/models/staging/stg_orders.sql
+@@ -1,5 +1,6 @@
+ SELECT
+     order_id,
++    order_number,
+     customer_id,
+     status,
+     created_at
+diff --git a/models/marts/orders.sql b/models/marts/orders.sql
+new file mode 100644
+index 0000000..abc1234
+--- /dev/null
++++ b/models/marts/orders.sql
+@@ -0,0 +1,10 @@
++SELECT
++    o.order_id,
++    o.order_number,
++    c.customer_name,
++    o.status,
++    o.created_at
++FROM {{ ref('stg_orders') }} o
++JOIN {{ ref('stg_customers') }} c
++    ON o.customer_id = c.customer_id
++WHERE o.status != 'cancelled'
+diff --git a/README.md b/README.md
+index 111aaa..222bbb 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,4 @@
+ # Project
+
+ A data project.
++Updated docs.

@@ -1,0 +1,108 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-repo:
+        description: "Repository to create a test PR in (owner/repo)"
+        required: false
+        default: "AltimateAI/altimate-code-actions-test"
+      mode:
+        description: "Action mode to test"
+        required: false
+        default: "static"
+        type: choice
+        options:
+          - static
+          - ai
+  schedule:
+    # Nightly at 03:00 UTC
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TEST_REPO: ${{ inputs.test-repo || 'AltimateAI/altimate-code-actions-test' }}
+      MODE: ${{ inputs.mode || 'static' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build action
+        run: bun run build
+
+      - name: Create test branch in test repo
+        id: setup
+        env:
+          GH_TOKEN: ${{ secrets.TEST_REPO_PAT }}
+        run: |
+          BRANCH="integration-test-$(date +%s)"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          # Clone the test repo
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TEST_REPO}.git" /tmp/test-repo
+          cd /tmp/test-repo
+
+          # Create a branch with a trivial SQL change
+          git checkout -b "$BRANCH"
+          echo "-- integration test $(date -u +%FT%TZ)" >> models/test_model.sql
+          git add .
+          git -c user.name="CI Bot" -c user.email="ci@altimate.ai" commit -m "test: integration test change"
+          git push origin "$BRANCH"
+
+          # Create a PR
+          PR_URL=$(gh pr create \
+            --repo "$TEST_REPO" \
+            --base main \
+            --head "$BRANCH" \
+            --title "Integration Test $(date -u +%FT%TZ)" \
+            --body "Automated integration test. Will be closed automatically.")
+          PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Created PR #$PR_NUMBER"
+
+      - name: Run action against test PR
+        uses: ./
+        with:
+          mode: ${{ env.MODE }}
+          model: anthropic/claude-haiku-4-5-20251001
+        env:
+          GITHUB_TOKEN: ${{ secrets.TEST_REPO_PAT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Validate PR comment was posted
+        env:
+          GH_TOKEN: ${{ secrets.TEST_REPO_PAT }}
+        run: |
+          PR_NUMBER="${{ steps.setup.outputs.pr_number }}"
+          COMMENTS=$(gh api "repos/${TEST_REPO}/issues/${PR_NUMBER}/comments" --jq 'length')
+          echo "Found $COMMENTS comments on PR #$PR_NUMBER"
+          if [ "$COMMENTS" -lt 1 ]; then
+            echo "::error::No comments were posted on the test PR"
+            exit 1
+          fi
+          echo "Validation passed: comment was posted successfully"
+
+      - name: Cleanup — close PR and delete branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.TEST_REPO_PAT }}
+        run: |
+          PR_NUMBER="${{ steps.setup.outputs.pr_number }}"
+          BRANCH="${{ steps.setup.outputs.branch }}"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr close "$PR_NUMBER" --repo "$TEST_REPO" --delete-branch || true
+          fi
+          echo "Cleanup complete"

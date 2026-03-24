@@ -1,0 +1,109 @@
+diff --git a/models/staging/stg_orders.sql b/models/staging/stg_orders.sql
+index a1b2c3d..e4f5g6h 100644
+--- a/models/staging/stg_orders.sql
++++ b/models/staging/stg_orders.sql
+@@ -1,3 +1,8 @@
++{{
++    config(
++        materialized='view'
++    )
++}}
++
+ with source as (
+     select * from {{ source('raw', 'orders') }}
+ ),
+@@ -8,7 +13,8 @@ renamed as (
+         user_id as customer_id,
+         order_date,
+         status as order_status,
+-        _etl_loaded_at as loaded_at
++        _etl_loaded_at as loaded_at,
++        _etl_batch_id as batch_id
+     from source
+ )
+
+diff --git a/models/staging/stg_payments.sql b/models/staging/stg_payments.sql
+index c3d4e5f..g6h7i8j 100644
+--- a/models/staging/stg_payments.sql
++++ b/models/staging/stg_payments.sql
+@@ -7,7 +7,9 @@ renamed as (
+         order_id,
+         payment_method,
+         amount as payment_amount,
+-        status as payment_status
++        status as payment_status,
++        created_at as payment_created_at,
++        currency
+     from source
+ )
+
+diff --git a/models/marts/fct_orders.sql b/models/marts/fct_orders.sql
+index d5e6f7g..k8l9m0n 100644
+--- a/models/marts/fct_orders.sql
++++ b/models/marts/fct_orders.sql
+@@ -1,3 +1,9 @@
++{{
++    config(
++        materialized='incremental',
++        unique_key='order_id'
++    )
++}}
++
+ with orders as (
+     select * from {{ ref('stg_orders') }}
+ ),
+@@ -12,7 +18,13 @@ final as (
+         orders.customer_id,
+         orders.order_date,
+         orders.order_status,
+-        coalesce(payments.total_amount, 0) as order_total
++        orders.batch_id,
++        coalesce(payments.total_amount, 0) as order_total,
++        payments.payment_method,
++        payments.currency
+     from orders
+     left join payments on orders.order_id = payments.order_id
++    {% if is_incremental() %}
++    where orders.loaded_at > (select max(loaded_at) from {{ this }})
++    {% endif %}
+ )
+
+diff --git a/models/schema.yml b/models/schema.yml
+index e7f8g9h..n1o2p3q 100644
+--- a/models/schema.yml
++++ b/models/schema.yml
+@@ -20,6 +20,10 @@ models:
+       - name: order_status
+         tests:
+           - accepted_values:
+               values: ['placed', 'shipped', 'completed', 'returned', 'cancelled']
++      - name: batch_id
++        description: "ETL batch identifier for lineage tracking"
++        tests:
++          - not_null
+
+   - name: fct_orders
+     description: "Fact table for orders with payment totals"
+@@ -32,3 +36,11 @@ models:
+       - name: order_total
+         tests:
+           - not_null
++      - name: payment_method
++        description: "Payment method used for the order"
++      - name: currency
++        description: "Currency code for the payment"
++        tests:
++          - not_null
++          - accepted_values:
++              values: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY']
+diff --git a/dbt_project.yml b/dbt_project.yml
+index f8g9h0i..o3p4q5r 100644
+--- a/dbt_project.yml
++++ b/dbt_project.yml
+@@ -15,3 +15,6 @@ models:
+       +materialized: view
+     marts:
+       +materialized: table
++
++vars:
++  payment_currencies: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY']

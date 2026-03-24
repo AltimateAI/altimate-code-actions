@@ -1,0 +1,10 @@
+diff --git a/models/old_name.sql b/models/new_name.sql
+similarity index 90%
+rename from models/old_name.sql
+rename to models/new_name.sql
+index abc1234..def5678 100644
+--- a/models/old_name.sql
++++ b/models/new_name.sql
+@@ -1,4 +1,4 @@
+-SELECT id, name FROM old_table
++SELECT id, name FROM new_table
