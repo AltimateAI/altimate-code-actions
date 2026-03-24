@@ -3,13 +3,14 @@ import { runCLI } from "../util/cli.js";
 import { getFileContent, getHeadSHA } from "../util/octokit.js";
 import type { ChangedFile, SQLIssue, ActionConfig } from "./types.js";
 import { Severity } from "./types.js";
+import { createRegistry } from "./rules.js";
+import { loadConfig } from "../config/loader.js";
 
 /**
- * Run SQL quality analysis on the given files using the altimate-code CLI.
+ * Run SQL quality analysis on the given files.
  *
- * For each SQL file, fetches the full content at the PR head and runs
- * `altimate-code run --format json` with a sql_analyze prompt. Results are
- * parsed into structured SQLIssue objects.
+ * In static mode: uses the built-in RuleRegistry (no CLI or model needed).
+ * In full/ai mode: delegates to the altimate-code CLI for AI-powered review.
  */
 export async function analyzeSQLFiles(
   files: ChangedFile[],
@@ -20,7 +21,14 @@ export async function analyzeSQLFiles(
     return [];
   }
 
-  core.info(`Analyzing ${files.length} SQL file(s)...`);
+  core.info(`Analyzing ${files.length} SQL file(s) in ${config.mode} mode...`);
+
+  // Static mode: use built-in rule engine (no CLI needed)
+  if (config.mode === "static") {
+    return analyzeWithRuleEngine(files, config);
+  }
+
+  // Full/AI mode: use CLI
   const allIssues: SQLIssue[] = [];
 
   // Process files in batches to avoid overwhelming the CLI
@@ -42,6 +50,37 @@ export async function analyzeSQLFiles(
   }
 
   core.info(`SQL analysis found ${allIssues.length} issue(s) total`);
+  return allIssues;
+}
+
+/**
+ * Analyze SQL files using the built-in rule engine (static mode).
+ * No CLI or LLM model needed — pure regex-based detection.
+ */
+async function analyzeWithRuleEngine(
+  files: ChangedFile[],
+  _config: ActionConfig,
+): Promise<SQLIssue[]> {
+  const altimateConfig = await loadConfig(".altimate.yml");
+  const registry = createRegistry(altimateConfig);
+  const allIssues: SQLIssue[] = [];
+
+  for (const file of files) {
+    let sqlContent: string;
+    try {
+      sqlContent = await getFileContent(file.filename, getHeadSHA());
+    } catch {
+      core.debug(`Could not fetch content for ${file.filename} — using patch`);
+      sqlContent = file.patch ?? "";
+    }
+
+    if (!sqlContent.trim()) continue;
+
+    const issues = registry.analyze(sqlContent, file.filename, altimateConfig);
+    allIssues.push(...issues);
+  }
+
+  core.info(`Static analysis found ${allIssues.length} issue(s) total`);
   return allIssues;
 }
 

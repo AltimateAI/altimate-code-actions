@@ -399,7 +399,10 @@ function deepMerge<T extends Record<string, unknown>>(
  * @throws {ConfigValidationError} if the config file has invalid values.
  */
 export function loadConfig(configPath?: string): AltimateConfig {
-  const filePath = resolve(configPath ?? ".altimate.yml");
+  if (!configPath?.trim()) {
+    configPath = ".altimate.yml";
+  }
+  const filePath = resolve(configPath);
 
   if (!existsSync(filePath)) {
     core.info(`No config file at ${filePath} — using defaults`);

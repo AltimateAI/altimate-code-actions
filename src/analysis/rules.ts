@@ -117,10 +117,11 @@ function detectMissingPartition(sql: string, file: string): SQLIssue[] {
 }
 
 function detectNonDeterministic(sql: string, file: string): SQLIssue[] {
+  // Match with or without parens: CURRENT_DATE, CURRENT_DATE(), NOW(), etc.
   return findAllMatches(
     sql,
     file,
-    /\b(CURRENT_DATE|CURRENT_TIMESTAMP|NOW|GETDATE|SYSDATE|SYSTIMESTAMP)\s*\(\s*\)/i,
+    /\b(CURRENT_DATE|CURRENT_TIMESTAMP|NOW|GETDATE|SYSDATE|SYSTIMESTAMP)\b(\s*\(\s*\))?/i,
     "non_deterministic",
     "Non-deterministic function detected — results will vary between runs. Consider parameterizing.",
     Severity.Warning,
@@ -191,6 +192,10 @@ function detectMissingGroupBy(sql: string, file: string): SQLIssue[] {
   const issues: SQLIssue[] = [];
   const lines = sql.split("\n");
   const fullUpper = sql.toUpperCase();
+
+  // Skip if query uses window functions (OVER clause) — aggregates in OVER
+  // don't require GROUP BY
+  if (/\bOVER\s*\(/i.test(sql)) return issues;
 
   // If query has aggregate functions but no GROUP BY
   const hasAggregate =
