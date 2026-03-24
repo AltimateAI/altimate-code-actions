@@ -2627,7 +2627,7 @@ var require_parseParams = __commonJS({
 var require_basename = __commonJS({
   "node_modules/@fastify/busboy/lib/utils/basename.js"(exports, module) {
     "use strict";
-    module.exports = function basename(path) {
+    module.exports = function basename2(path) {
       if (typeof path !== "string") {
         return "";
       }
@@ -2654,7 +2654,7 @@ var require_multipart = __commonJS({
     var Dicer = require_Dicer();
     var parseParams = require_parseParams();
     var decodeText = require_decodeText();
-    var basename = require_basename();
+    var basename2 = require_basename();
     var getLimit = require_getLimit();
     var RE_BOUNDARY = /^boundary$/i;
     var RE_FIELD = /^form-data$/i;
@@ -2771,7 +2771,7 @@ var require_multipart = __commonJS({
               } else if (RE_FILENAME.test(parsed[i][0])) {
                 filename = parsed[i][1];
                 if (!preservePath) {
-                  filename = basename(filename);
+                  filename = basename2(filename);
                 }
               }
             }
@@ -17596,12 +17596,12 @@ var require_lib = __commonJS({
             throw new Error("Client has already been disposed.");
           }
           const parsedUrl = new URL(requestUrl);
-          let info11 = this._prepareRequest(verb, parsedUrl, headers);
+          let info12 = this._prepareRequest(verb, parsedUrl, headers);
           const maxTries = this._allowRetries && RetryableHttpVerbs.includes(verb) ? this._maxRetries + 1 : 1;
           let numTries = 0;
           let response;
           do {
-            response = yield this.requestRaw(info11, data);
+            response = yield this.requestRaw(info12, data);
             if (response && response.message && response.message.statusCode === HttpCodes.Unauthorized) {
               let authenticationHandler;
               for (const handler of this.handlers) {
@@ -17611,7 +17611,7 @@ var require_lib = __commonJS({
                 }
               }
               if (authenticationHandler) {
-                return authenticationHandler.handleAuthentication(this, info11, data);
+                return authenticationHandler.handleAuthentication(this, info12, data);
               } else {
                 return response;
               }
@@ -17634,8 +17634,8 @@ var require_lib = __commonJS({
                   }
                 }
               }
-              info11 = this._prepareRequest(verb, parsedRedirectUrl, headers);
-              response = yield this.requestRaw(info11, data);
+              info12 = this._prepareRequest(verb, parsedRedirectUrl, headers);
+              response = yield this.requestRaw(info12, data);
               redirectsRemaining--;
             }
             if (!response.message.statusCode || !HttpResponseRetryCodes.includes(response.message.statusCode)) {
@@ -17664,7 +17664,7 @@ var require_lib = __commonJS({
        * @param info
        * @param data
        */
-      requestRaw(info11, data) {
+      requestRaw(info12, data) {
         return __awaiter(this, void 0, void 0, function* () {
           return new Promise((resolve2, reject) => {
             function callbackForResult(err, res) {
@@ -17676,7 +17676,7 @@ var require_lib = __commonJS({
                 resolve2(res);
               }
             }
-            this.requestRawWithCallback(info11, data, callbackForResult);
+            this.requestRawWithCallback(info12, data, callbackForResult);
           });
         });
       }
@@ -17686,12 +17686,12 @@ var require_lib = __commonJS({
        * @param data
        * @param onResult
        */
-      requestRawWithCallback(info11, data, onResult) {
+      requestRawWithCallback(info12, data, onResult) {
         if (typeof data === "string") {
-          if (!info11.options.headers) {
-            info11.options.headers = {};
+          if (!info12.options.headers) {
+            info12.options.headers = {};
           }
-          info11.options.headers["Content-Length"] = Buffer.byteLength(data, "utf8");
+          info12.options.headers["Content-Length"] = Buffer.byteLength(data, "utf8");
         }
         let callbackCalled = false;
         function handleResult(err, res) {
@@ -17700,7 +17700,7 @@ var require_lib = __commonJS({
             onResult(err, res);
           }
         }
-        const req = info11.httpModule.request(info11.options, (msg) => {
+        const req = info12.httpModule.request(info12.options, (msg) => {
           const res = new HttpClientResponse(msg);
           handleResult(void 0, res);
         });
@@ -17712,7 +17712,7 @@ var require_lib = __commonJS({
           if (socket) {
             socket.end();
           }
-          handleResult(new Error(`Request timeout: ${info11.options.path}`));
+          handleResult(new Error(`Request timeout: ${info12.options.path}`));
         });
         req.on("error", function(err) {
           handleResult(err);
@@ -17748,27 +17748,27 @@ var require_lib = __commonJS({
         return this._getProxyAgentDispatcher(parsedUrl, proxyUrl);
       }
       _prepareRequest(method, requestUrl, headers) {
-        const info11 = {};
-        info11.parsedUrl = requestUrl;
-        const usingSsl = info11.parsedUrl.protocol === "https:";
-        info11.httpModule = usingSsl ? https : http;
+        const info12 = {};
+        info12.parsedUrl = requestUrl;
+        const usingSsl = info12.parsedUrl.protocol === "https:";
+        info12.httpModule = usingSsl ? https : http;
         const defaultPort = usingSsl ? 443 : 80;
-        info11.options = {};
-        info11.options.host = info11.parsedUrl.hostname;
-        info11.options.port = info11.parsedUrl.port ? parseInt(info11.parsedUrl.port) : defaultPort;
-        info11.options.path = (info11.parsedUrl.pathname || "") + (info11.parsedUrl.search || "");
-        info11.options.method = method;
-        info11.options.headers = this._mergeHeaders(headers);
+        info12.options = {};
+        info12.options.host = info12.parsedUrl.hostname;
+        info12.options.port = info12.parsedUrl.port ? parseInt(info12.parsedUrl.port) : defaultPort;
+        info12.options.path = (info12.parsedUrl.pathname || "") + (info12.parsedUrl.search || "");
+        info12.options.method = method;
+        info12.options.headers = this._mergeHeaders(headers);
         if (this.userAgent != null) {
-          info11.options.headers["user-agent"] = this.userAgent;
+          info12.options.headers["user-agent"] = this.userAgent;
         }
-        info11.options.agent = this._getAgent(info11.parsedUrl);
+        info12.options.agent = this._getAgent(info12.parsedUrl);
         if (this.handlers) {
           for (const handler of this.handlers) {
-            handler.prepareRequest(info11.options);
+            handler.prepareRequest(info12.options);
           }
         }
-        return info11;
+        return info12;
       }
       _mergeHeaders(headers) {
         if (this.requestOptions && this.requestOptions.headers) {
@@ -19758,10 +19758,10 @@ Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
       (0, command_1.issueCommand)("notice", (0, utils_1.toCommandProperties)(properties), message instanceof Error ? message.toString() : message);
     }
     exports.notice = notice;
-    function info11(message) {
+    function info12(message) {
       process.stdout.write(message + os.EOL);
     }
-    exports.info = info11;
+    exports.info = info12;
     function startGroup(name) {
       (0, command_1.issue)("group", name);
     }
@@ -24328,23 +24328,36 @@ function buildMermaidDAG(impact) {
   );
   lines.push("");
   const sanitize = (name) => name.replace(/[^a-zA-Z0-9_]/g, "_");
-  for (const mod of impact.modifiedModels) {
-    const modId = sanitize(mod);
-    for (const ds of impact.downstreamModels) {
-      const dsId = sanitize(ds);
-      lines.push(`    ${modId}:::modified --> ${dsId}:::downstream`);
+  const modifiedSet = new Set(impact.modifiedModels);
+  const downstreamSet = new Set(impact.downstreamModels);
+  const exposureSet = new Set(impact.affectedExposures);
+  if (impact.edges && impact.edges.length > 0) {
+    for (const edge of impact.edges) {
+      const fromId = sanitize(edge.from);
+      const toId = sanitize(edge.to);
+      const fromClass = modifiedSet.has(edge.from) ? "modified" : "downstream";
+      const toClass = exposureSet.has(edge.to) ? "exposure" : downstreamSet.has(edge.to) ? "downstream" : modifiedSet.has(edge.to) ? "modified" : "downstream";
+      lines.push(`    ${fromId}:::${fromClass} --> ${toId}:::${toClass}`);
     }
-    for (const exp of impact.affectedExposures) {
-      const expId = sanitize(exp);
-      lines.push(`    ${modId}:::modified --> ${expId}:::exposure`);
-    }
-  }
-  if (impact.downstreamModels.length > 0 && impact.affectedExposures.length > 0) {
-    for (const ds of impact.downstreamModels) {
-      const dsId = sanitize(ds);
+  } else {
+    for (const mod of impact.modifiedModels) {
+      const modId = sanitize(mod);
+      for (const ds of impact.downstreamModels) {
+        const dsId = sanitize(ds);
+        lines.push(`    ${modId}:::modified --> ${dsId}:::downstream`);
+      }
       for (const exp of impact.affectedExposures) {
         const expId = sanitize(exp);
-        lines.push(`    ${dsId}:::downstream --> ${expId}:::exposure`);
+        lines.push(`    ${modId}:::modified --> ${expId}:::exposure`);
+      }
+    }
+    if (impact.downstreamModels.length > 0 && impact.affectedExposures.length > 0) {
+      for (const ds of impact.downstreamModels) {
+        const dsId = sanitize(ds);
+        for (const exp of impact.affectedExposures) {
+          const expId = sanitize(exp);
+          lines.push(`    ${dsId}:::downstream --> ${expId}:::exposure`);
+        }
       }
     }
   }
@@ -24526,7 +24539,7 @@ var init_comment = __esm({
 });
 
 // src/index.ts
-var core12 = __toESM(require_core(), 1);
+var core13 = __toESM(require_core(), 1);
 var github4 = __toESM(require_github(), 1);
 
 // src/config/loader.ts
@@ -27610,16 +27623,6 @@ async function runCLI(args, options = {}) {
     });
   });
 }
-async function runCLIOrThrow(args, options = {}) {
-  const result = await runCLI(args, options);
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.trim() || result.stdout.trim() || "(no output)";
-    throw new Error(
-      `altimate-code exited with code ${result.exitCode}: ${detail}`
-    );
-  }
-  return result;
-}
 
 // src/analysis/sql-review.ts
 init_octokit();
@@ -28414,6 +28417,7 @@ var core7 = __toESM(require_core(), 1);
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { existsSync as existsSync2 } from "node:fs";
+import { execFileSync } from "node:child_process";
 function detectDBTProject(explicitDir) {
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
   if (explicitDir) {
@@ -28455,12 +28459,12 @@ async function getManifest(dbtProjectDir, explicitManifestPath) {
       return void 0;
     }
   }
-  core7.info("No manifest found \u2014 attempting dbt compile via CLI...");
+  core7.info("No manifest found \u2014 attempting dbt compile...");
   try {
-    await runCLIOrThrow(
-      ["run", "--format", "json", "--prompt", "run dbt compile"],
-      { cwd: dbtProjectDir, timeout: 12e4 }
-    );
+    execFileSync("dbt", ["compile", "--project-dir", dbtProjectDir], {
+      timeout: 12e4,
+      stdio: "pipe"
+    });
     const defaultPath = join(dbtProjectDir, "target", "manifest.json");
     if (existsSync2(defaultPath)) {
       return parseManifestFile(defaultPath);
@@ -28901,17 +28905,162 @@ async function postNewComment(prNumber, body) {
   return response.data.html_url;
 }
 
+// src/context/dbt-lightweight.ts
+var core12 = __toESM(require_core(), 1);
+import { readFileSync as readFileSync2, readdirSync, existsSync as existsSync3, statSync } from "node:fs";
+import { join as join2, basename, relative as relative2 } from "node:path";
+function extractRefs(sql) {
+  const refs = [];
+  const pattern = /\{\{\s*ref\s*\(\s*['"](\w+)['"]\s*\)\s*\}\}/gi;
+  let match;
+  while ((match = pattern.exec(sql)) !== null) {
+    refs.push(match[1]);
+  }
+  return [...new Set(refs)];
+}
+function extractSources(sql) {
+  const sources = [];
+  const pattern = /\{\{\s*source\s*\(\s*['"](\w+)['"]\s*,\s*['"](\w+)['"]\s*\)\s*\}\}/gi;
+  let match;
+  while ((match = pattern.exec(sql)) !== null) {
+    sources.push(`${match[1]}.${match[2]}`);
+  }
+  return [...new Set(sources)];
+}
+function findSQLFiles(dir) {
+  const results = [];
+  if (!existsSync3(dir)) return results;
+  const entries = readdirSync(dir);
+  for (const entry of entries) {
+    const fullPath = join2(dir, entry);
+    const stat = statSync(fullPath);
+    if (stat.isDirectory()) {
+      results.push(...findSQLFiles(fullPath));
+    } else if (entry.endsWith(".sql")) {
+      results.push(fullPath);
+    }
+  }
+  return results;
+}
+function buildLightweightDAG(dbtProjectDir) {
+  const nodes = /* @__PURE__ */ new Map();
+  const childMap = /* @__PURE__ */ new Map();
+  const modelDirs = ["models", "dbt_models", "model"];
+  let sqlFiles = [];
+  for (const dir of modelDirs) {
+    const fullDir = join2(dbtProjectDir, dir);
+    if (existsSync3(fullDir)) {
+      sqlFiles.push(...findSQLFiles(fullDir));
+    }
+  }
+  if (sqlFiles.length === 0) {
+    sqlFiles = findSQLFiles(dbtProjectDir).filter(
+      (f) => !f.includes("target/") && !f.includes("dbt_packages/")
+    );
+  }
+  for (const filePath of sqlFiles) {
+    const modelName = basename(filePath, ".sql");
+    const sql = readFileSync2(filePath, "utf-8");
+    const refs = extractRefs(sql);
+    const sources = extractSources(sql);
+    nodes.set(modelName, { name: modelName, filePath, refs, sources });
+  }
+  for (const [modelName, node] of nodes) {
+    for (const parentName of node.refs) {
+      if (!childMap.has(parentName)) {
+        childMap.set(parentName, []);
+      }
+      childMap.get(parentName).push(modelName);
+    }
+  }
+  core12.info(
+    `Lightweight DAG: ${nodes.size} models, ${[...childMap.values()].reduce((s, c) => s + c.length, 0)} edges`
+  );
+  return { nodes, childMap };
+}
+function analyzeLightweightImpact(changedFiles, dbtProjectDir) {
+  const dag = buildLightweightDAG(dbtProjectDir);
+  if (dag.nodes.size === 0) {
+    core12.info("Lightweight DAG: no models found \u2014 skipping impact analysis");
+    return null;
+  }
+  const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const modifiedModels = [];
+  for (const file of changedFiles) {
+    if (!file.filename.endsWith(".sql")) continue;
+    const modelName = basename(file.filename, ".sql");
+    if (dag.nodes.has(modelName)) {
+      modifiedModels.push(modelName);
+    } else {
+      const absPath = join2(workspace, file.filename);
+      for (const [name, node] of dag.nodes) {
+        const relFromProject = relative2(dbtProjectDir, node.filePath);
+        const relFromWorkspace = relative2(workspace, node.filePath);
+        if (file.filename === relFromProject || file.filename === relFromWorkspace || absPath === node.filePath) {
+          modifiedModels.push(name);
+          break;
+        }
+      }
+    }
+  }
+  const uniqueModified = [...new Set(modifiedModels)];
+  if (uniqueModified.length === 0) {
+    core12.info(
+      "Lightweight DAG: no changed files matched any models \u2014 skipping"
+    );
+    return {
+      modifiedModels: [],
+      downstreamModels: [],
+      affectedExposures: [],
+      affectedTests: [],
+      impactScore: 0
+    };
+  }
+  const visited = new Set(uniqueModified);
+  const queue = [...uniqueModified];
+  const downstreamModels = [];
+  const edges = [];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const children = dag.childMap.get(current) ?? [];
+    for (const child of children) {
+      edges.push({ from: current, to: child });
+      if (!visited.has(child)) {
+        visited.add(child);
+        downstreamModels.push(child);
+        queue.push(child);
+      }
+    }
+  }
+  const totalModels = dag.nodes.size;
+  const affectedRatio = (uniqueModified.length + downstreamModels.length) / totalModels;
+  const downstreamScore = Math.min(50, Math.round(affectedRatio * 100));
+  const modificationScore = Math.min(20, uniqueModified.length * 5);
+  const impactScore = Math.min(100, downstreamScore + modificationScore);
+  core12.info(
+    `Lightweight impact: ${uniqueModified.length} modified, ${downstreamModels.length} downstream, score=${impactScore}`
+  );
+  return {
+    modifiedModels: uniqueModified,
+    downstreamModels,
+    affectedExposures: [],
+    affectedTests: [],
+    impactScore,
+    edges
+  };
+}
+
 // src/index.ts
 init_comment();
 async function main() {
   try {
     const eventAction = github4.context.payload.action;
     if (eventAction === "closed") {
-      core12.info("PR is closed \u2014 skipping analysis");
+      core13.info("PR is closed \u2014 skipping analysis");
       return;
     }
     if (process.env.WAREHOUSE_CONNECTION) {
-      core12.setSecret(process.env.WAREHOUSE_CONNECTION);
+      core13.setSecret(process.env.WAREHOUSE_CONNECTION);
     }
     const fileConfig = loadConfig(".altimate.yml");
     const mergedFileConfig = mergeWithInputs(fileConfig, {
@@ -28922,21 +29071,21 @@ async function main() {
     });
     const config = parseConfig();
     config.fileConfig = mergedFileConfig;
-    core12.info(`Altimate Code Review \u2014 mode: ${config.mode}, model: ${config.model || "(none, static mode)"}`);
+    core13.info(`Altimate Code Review \u2014 mode: ${config.mode}, model: ${config.model || "(none, static mode)"}`);
     if (config.interactive && isInteractiveMention(config.mentions)) {
       await handleInteractiveMention(config);
       return;
     }
     const isForkPR = github4.context.payload.pull_request?.head?.repo?.fork === true;
     if (isForkPR) {
-      core12.warning(
+      core13.warning(
         "Fork PR detected \u2014 posting comments requires write permissions. Results written to job summary only."
       );
     }
     const prContext = await getPRContext();
     const sqlFiles = getChangedSQLFiles(prContext, config.maxFiles);
     if (sqlFiles.length === 0 && !config.impactAnalysis) {
-      core12.info("No SQL files changed and impact analysis is disabled \u2014 nothing to do");
+      core13.info("No SQL files changed and impact analysis is disabled \u2014 nothing to do");
       setOutputs({
         issues_found: "0",
         impact_score: "",
@@ -28970,9 +29119,9 @@ async function main() {
         const { buildComment: buildComment2 } = await Promise.resolve().then(() => (init_comment(), comment_exports));
         const body = buildComment2(report);
         if (body) {
-          core12.summary.addRaw(body);
-          await core12.summary.write();
-          core12.info("Fork PR \u2014 results written to job summary");
+          core13.summary.addRaw(body);
+          await core13.summary.write();
+          core13.info("Fork PR \u2014 results written to job summary");
         }
       } else {
         commentUrl = await postReviewComment(
@@ -28982,7 +29131,7 @@ async function main() {
         );
       }
     } else {
-      core12.info("No findings \u2014 skipping PR comment");
+      core13.info("No findings \u2014 skipping PR comment");
     }
     setOutputs({
       issues_found: String(report.issuesFound),
@@ -28992,13 +29141,13 @@ async function main() {
       report_json: JSON.stringify(report)
     });
     if (report.shouldFail) {
-      core12.setFailed(
+      core13.setFailed(
         `Altimate Code Review: found issues meeting the fail_on=${config.failOn} threshold`
       );
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    core12.setFailed(`Altimate Code Review failed: ${message}`);
+    core13.setFailed(`Altimate Code Review failed: ${message}`);
   }
 }
 async function runAnalyses(sqlFiles, prContext, config) {
@@ -29012,12 +29161,15 @@ async function runAnalyses(sqlFiles, prContext, config) {
       if (!dbtProjectDir) return null;
       const dbtFiles = getChangedDBTModels(prContext, dbtProjectDir);
       if (dbtFiles.length === 0) {
-        core12.info("No dbt model files changed \u2014 skipping impact analysis");
+        core13.info("No dbt model files changed \u2014 skipping impact analysis");
         return null;
       }
       const manifest = await getManifest(dbtProjectDir, config.manifestPath);
-      if (!manifest) return null;
-      return analyzeImpact(dbtFiles, manifest, dbtProjectDir);
+      if (manifest) {
+        return analyzeImpact(dbtFiles, manifest, dbtProjectDir);
+      }
+      core13.info("No manifest \u2014 using lightweight ref() parsing for impact analysis");
+      return analyzeLightweightImpact(dbtFiles, dbtProjectDir);
     })(),
     // Cost estimation
     config.costEstimation ? estimateCost(sqlFiles, config) : Promise.resolve([])
@@ -29026,13 +29178,13 @@ async function runAnalyses(sqlFiles, prContext, config) {
 }
 async function handleInteractiveMention(config) {
   const comment = getMentionComment();
-  core12.info(`Interactive mention detected: "${comment.slice(0, 80)}..."`);
+  core13.info(`Interactive mention detected: "${comment.slice(0, 80)}..."`);
   const parsed = parseCommand(comment, config.mentions);
   if (parsed) {
-    core12.info(`Parsed command: ${parsed.command} (args: ${parsed.args.join(", ")})`);
+    core13.info(`Parsed command: ${parsed.command} (args: ${parsed.args.join(", ")})`);
     const prNumber = github4.context.payload.pull_request?.number ?? github4.context.payload.issue?.number;
     if (!prNumber) {
-      core12.warning("Could not determine PR number from event payload");
+      core13.warning("Could not determine PR number from event payload");
       return;
     }
     await handleCommand(parsed, prNumber, config);
@@ -29046,7 +29198,7 @@ async function handleInteractiveMention(config) {
   }
   const result = await runCLI(["github", "run"], { env, timeout: 3e5 });
   if (result.exitCode !== 0) {
-    core12.warning(
+    core13.warning(
       `Interactive mention handler exited with code ${result.exitCode}`
     );
   }
@@ -29073,7 +29225,7 @@ function parseConfig() {
     try {
       warehouseConnection = JSON.parse(rawConnection);
     } catch {
-      core12.warning("WAREHOUSE_CONNECTION is not valid JSON \u2014 ignoring");
+      core13.warning("WAREHOUSE_CONNECTION is not valid JSON \u2014 ignoring");
     }
   }
   return {
@@ -29123,7 +29275,7 @@ function envEnum(name, allowed, defaultValue) {
 }
 function setOutputs(outputs) {
   for (const [key, value] of Object.entries(outputs)) {
-    core12.setOutput(key, value);
+    core13.setOutput(key, value);
   }
 }
 main();

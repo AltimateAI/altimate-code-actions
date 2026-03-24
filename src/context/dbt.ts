@@ -2,7 +2,7 @@ import * as core from "@actions/core";
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { existsSync } from "node:fs";
-import { runCLIOrThrow } from "../util/cli.js";
+import { execFileSync } from "node:child_process";
 import type {
   ChangedFile,
   DBTManifest,
@@ -81,13 +81,13 @@ export async function getManifest(
     }
   }
 
-  // Attempt to compile dbt to generate manifest
-  core.info("No manifest found — attempting dbt compile via CLI...");
+  // Attempt to compile dbt directly to generate manifest
+  core.info("No manifest found — attempting dbt compile...");
   try {
-    await runCLIOrThrow(
-      ["run", "--format", "json", "--prompt", "run dbt compile"],
-      { cwd: dbtProjectDir, timeout: 120_000 },
-    );
+    execFileSync("dbt", ["compile", "--project-dir", dbtProjectDir], {
+      timeout: 120_000,
+      stdio: "pipe",
+    });
 
     const defaultPath = join(dbtProjectDir, "target", "manifest.json");
     if (existsSync(defaultPath)) {

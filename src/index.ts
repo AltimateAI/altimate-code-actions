@@ -16,6 +16,7 @@ import {
 import { parseCommand } from "./interactive/commands.js";
 import { handleCommand } from "./interactive/handler.js";
 import { detectDBTProject, getManifest } from "./context/dbt.js";
+import { analyzeLightweightImpact } from "./context/dbt-lightweight.js";
 import { analyzeSQLFiles } from "./analysis/sql-review.js";
 import { analyzeImpact } from "./analysis/impact.js";
 import { estimateCost, getTotalCostDelta } from "./analysis/cost.js";
@@ -194,9 +195,13 @@ async function runAnalyses(
       }
 
       const manifest = await getManifest(dbtProjectDir, config.manifestPath);
-      if (!manifest) return null;
+      if (manifest) {
+        return analyzeImpact(dbtFiles, manifest, dbtProjectDir);
+      }
 
-      return analyzeImpact(dbtFiles, manifest, dbtProjectDir);
+      // Lightweight fallback: parse ref() calls directly from SQL files
+      core.info("No manifest — using lightweight ref() parsing for impact analysis");
+      return analyzeLightweightImpact(dbtFiles, dbtProjectDir);
     })(),
 
     // Cost estimation

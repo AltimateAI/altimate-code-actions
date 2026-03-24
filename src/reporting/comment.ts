@@ -270,30 +270,50 @@ export function buildMermaidDAG(impact: ImpactResult): string {
   const sanitize = (name: string): string =>
     name.replace(/[^a-zA-Z0-9_]/g, "_");
 
-  // Build edges: modified → downstream
-  for (const mod of impact.modifiedModels) {
-    const modId = sanitize(mod);
-    for (const ds of impact.downstreamModels) {
-      const dsId = sanitize(ds);
-      lines.push(`    ${modId}:::modified --> ${dsId}:::downstream`);
-    }
-    // modified → exposures
-    for (const exp of impact.affectedExposures) {
-      const expId = sanitize(exp);
-      lines.push(`    ${modId}:::modified --> ${expId}:::exposure`);
-    }
-  }
+  const modifiedSet = new Set(impact.modifiedModels);
+  const downstreamSet = new Set(impact.downstreamModels);
+  const exposureSet = new Set(impact.affectedExposures);
 
-  // If downstream also connects to exposures
-  if (
-    impact.downstreamModels.length > 0 &&
-    impact.affectedExposures.length > 0
-  ) {
-    for (const ds of impact.downstreamModels) {
-      const dsId = sanitize(ds);
+  // Use explicit edges if available (from lightweight DAG), otherwise
+  // fall back to the cartesian product approach (modified → downstream).
+  if (impact.edges && impact.edges.length > 0) {
+    for (const edge of impact.edges) {
+      const fromId = sanitize(edge.from);
+      const toId = sanitize(edge.to);
+      const fromClass = modifiedSet.has(edge.from) ? "modified" : "downstream";
+      const toClass = exposureSet.has(edge.to)
+        ? "exposure"
+        : downstreamSet.has(edge.to)
+          ? "downstream"
+          : modifiedSet.has(edge.to)
+            ? "modified"
+            : "downstream";
+      lines.push(`    ${fromId}:::${fromClass} --> ${toId}:::${toClass}`);
+    }
+  } else {
+    // Legacy: cartesian product of modified → downstream
+    for (const mod of impact.modifiedModels) {
+      const modId = sanitize(mod);
+      for (const ds of impact.downstreamModels) {
+        const dsId = sanitize(ds);
+        lines.push(`    ${modId}:::modified --> ${dsId}:::downstream`);
+      }
       for (const exp of impact.affectedExposures) {
         const expId = sanitize(exp);
-        lines.push(`    ${dsId}:::downstream --> ${expId}:::exposure`);
+        lines.push(`    ${modId}:::modified --> ${expId}:::exposure`);
+      }
+    }
+
+    if (
+      impact.downstreamModels.length > 0 &&
+      impact.affectedExposures.length > 0
+    ) {
+      for (const ds of impact.downstreamModels) {
+        const dsId = sanitize(ds);
+        for (const exp of impact.affectedExposures) {
+          const expId = sanitize(exp);
+          lines.push(`    ${dsId}:::downstream --> ${expId}:::exposure`);
+        }
       }
     }
   }

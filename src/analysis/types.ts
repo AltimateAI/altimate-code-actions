@@ -44,6 +44,8 @@ export interface ImpactResult {
   affectedTests: string[];
   /** Aggregate impact score 0-100 (higher = more risk). */
   impactScore: number;
+  /** Explicit DAG edges for Mermaid rendering. */
+  edges?: Array<{ from: string; to: string }>;
 }
 
 /** Cost estimate for a single file or model. */
