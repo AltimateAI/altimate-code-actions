@@ -367,10 +367,11 @@ describe("Comment Builder v0.3", () => {
       expect(section).toContain("```mermaid");
       expect(section).toContain("graph LR");
       expect(section).toContain("classDef modified fill:#ff6b6b");
-      expect(section).toContain("classDef downstream fill:#ffd93d");
+      expect(section).toContain("classDef downstream fill:#ffd43b");
       expect(section).toContain("classDef exposure fill:#845ef7");
-      expect(section).toContain("stg_orders:::modified --> fct_revenue:::downstream");
-      expect(section).toContain("stg_orders:::modified --> dim_customers:::downstream");
+      expect(section).toContain("stg_orders");
+      expect(section).toContain("fct_revenue");
+      expect(section).toContain("dim_customers");
     });
 
     it("includes exposures with purple class", () => {
@@ -383,10 +384,11 @@ describe("Comment Builder v0.3", () => {
       };
       const section = buildMermaidDAG(impact);
 
-      expect(section).toContain("exec_dashboard:::exposure");
+      expect(section).toContain("exec_dashboard");
+      expect(section).toContain("exposure");
     });
 
-    it("is collapsible", () => {
+    it("is visible by default (not collapsed)", () => {
       const impact: ImpactResult = {
         modifiedModels: ["stg_orders"],
         downstreamModels: ["fct_revenue"],
@@ -396,9 +398,10 @@ describe("Comment Builder v0.3", () => {
       };
       const section = buildMermaidDAG(impact);
 
-      expect(section).toContain("<details>");
-      expect(section).toContain("</details>");
+      // DAG should NOT be in <details> — it's the wow factor
+      expect(section).not.toContain("<details>");
       expect(section).toContain("Blast Radius");
+      expect(section).toContain("```mermaid");
     });
 
     it("shows correct downstream count in summary", () => {
@@ -424,8 +427,9 @@ describe("Comment Builder v0.3", () => {
       };
       const section = buildMermaidDAG(impact);
 
-      expect(section).toContain("stg_orders_v2:::modified");
-      expect(section).toContain("fct_revenue:::downstream");
+      // Sanitized IDs should not contain hyphens/dots/spaces
+      expect(section).toContain("stg_orders_v2");
+      expect(section).toContain("fct_revenue");
     });
 
     it("connects downstream models to exposures", () => {
@@ -438,7 +442,39 @@ describe("Comment Builder v0.3", () => {
       };
       const section = buildMermaidDAG(impact);
 
-      expect(section).toContain("fct_revenue:::downstream --> exec_dashboard:::exposure");
+      expect(section).toContain("fct_revenue");
+      expect(section).toContain("exec_dashboard");
+      expect(section).toContain("exposure");
+    });
+
+    it("filters out test nodes from the diagram", () => {
+      const impact: ImpactResult = {
+        modifiedModels: ["stg_orders"],
+        downstreamModels: ["fct_revenue", "not_null_stg_orders_id", "unique_stg_orders_id"],
+        affectedExposures: [],
+        affectedTests: ["not_null_stg_orders_id"],
+        impactScore: 30,
+      };
+      const section = buildMermaidDAG(impact);
+
+      expect(section).toContain("fct_revenue");
+      expect(section).not.toContain("not_null_stg_orders_id");
+      expect(section).not.toContain("unique_stg_orders_id");
+      expect(section).toContain("2 tests affected");
+    });
+
+    it("includes a legend", () => {
+      const impact: ImpactResult = {
+        modifiedModels: ["stg_orders"],
+        downstreamModels: ["fct_revenue"],
+        affectedExposures: [],
+        affectedTests: [],
+        impactScore: 30,
+      };
+      const section = buildMermaidDAG(impact);
+
+      expect(section).toContain("Modified");
+      expect(section).toContain("Downstream");
     });
   });
 

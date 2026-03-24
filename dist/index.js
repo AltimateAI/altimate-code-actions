@@ -24309,61 +24309,78 @@ function buildSummaryTable(report) {
   }
   return rows.join("\n");
 }
+function isTestNode(name) {
+  return /^(not_null|unique|accepted_values|relationships|dbt_utils|dbt_expectations)_/.test(name);
+}
 function buildMermaidDAG(impact) {
-  const totalDownstream = impact.downstreamModels.length + impact.affectedExposures.length;
+  const filteredDownstream = impact.downstreamModels.filter(
+    (d) => !isTestNode(d)
+  );
+  const filteredExposures = impact.affectedExposures;
+  const totalVisible = filteredDownstream.length + filteredExposures.length;
+  const testCount = impact.downstreamModels.length - filteredDownstream.length;
   const lines = [];
-  lines.push("<details>");
   lines.push(
-    `<summary>\u{1F4CA} Blast Radius \u2014 ${totalDownstream} downstream ${totalDownstream === 1 ? "model" : "models"}</summary>`
+    `### \u{1F4CA} Blast Radius \u2014 ${totalVisible} downstream ${totalVisible === 1 ? "model" : "models"}${testCount > 0 ? ` (${testCount} tests affected)` : ""}`
   );
   lines.push("");
   lines.push("```mermaid");
   lines.push("graph LR");
   lines.push(
-    "    classDef modified fill:#ff6b6b,stroke:#333,color:#fff"
+    "    classDef modified fill:#ff6b6b,stroke:#c92a2a,color:#fff,stroke-width:2px"
   );
-  lines.push("    classDef downstream fill:#ffd93d,stroke:#333");
   lines.push(
-    "    classDef exposure fill:#845ef7,stroke:#333,color:#fff"
+    "    classDef downstream fill:#ffd43b,stroke:#e67700,color:#333,stroke-width:1px"
+  );
+  lines.push(
+    "    classDef exposure fill:#845ef7,stroke:#5f3dc4,color:#fff,stroke-width:2px"
   );
   lines.push("");
   const sanitize = (name) => name.replace(/[^a-zA-Z0-9_]/g, "_");
   const modifiedSet = new Set(impact.modifiedModels);
-  const downstreamSet = new Set(impact.downstreamModels);
-  const exposureSet = new Set(impact.affectedExposures);
+  const exposureSet = new Set(filteredExposures);
+  const visibleNodes = /* @__PURE__ */ new Set([
+    ...impact.modifiedModels,
+    ...filteredDownstream,
+    ...filteredExposures
+  ]);
+  const edgesAdded = /* @__PURE__ */ new Set();
+  const addEdge = (from, to) => {
+    const key = `${from}-->${to}`;
+    if (edgesAdded.has(key)) return;
+    edgesAdded.add(key);
+    const fromId = sanitize(from);
+    const toId = sanitize(to);
+    const fromClass = modifiedSet.has(from) ? "modified" : exposureSet.has(from) ? "exposure" : "downstream";
+    const toClass = exposureSet.has(to) ? "exposure" : modifiedSet.has(to) ? "modified" : "downstream";
+    const fromLabel = from.replace(/^(stg_|int_|fct_|dim_|rpt_)/, (m) => m);
+    const toLabel = to.replace(/^(stg_|int_|fct_|dim_|rpt_)/, (m) => m);
+    lines.push(
+      `    ${fromId}["${fromLabel}"]:::${fromClass} --> ${toId}["${toLabel}"]:::${toClass}`
+    );
+  };
   if (impact.edges && impact.edges.length > 0) {
     for (const edge of impact.edges) {
-      const fromId = sanitize(edge.from);
-      const toId = sanitize(edge.to);
-      const fromClass = modifiedSet.has(edge.from) ? "modified" : "downstream";
-      const toClass = exposureSet.has(edge.to) ? "exposure" : downstreamSet.has(edge.to) ? "downstream" : modifiedSet.has(edge.to) ? "modified" : "downstream";
-      lines.push(`    ${fromId}:::${fromClass} --> ${toId}:::${toClass}`);
+      if (!visibleNodes.has(edge.from) || !visibleNodes.has(edge.to)) continue;
+      addEdge(edge.from, edge.to);
     }
   } else {
     for (const mod of impact.modifiedModels) {
-      const modId = sanitize(mod);
-      for (const ds of impact.downstreamModels) {
-        const dsId = sanitize(ds);
-        lines.push(`    ${modId}:::modified --> ${dsId}:::downstream`);
-      }
-      for (const exp of impact.affectedExposures) {
-        const expId = sanitize(exp);
-        lines.push(`    ${modId}:::modified --> ${expId}:::exposure`);
+      for (const ds of filteredDownstream) {
+        addEdge(mod, ds);
       }
     }
-    if (impact.downstreamModels.length > 0 && impact.affectedExposures.length > 0) {
-      for (const ds of impact.downstreamModels) {
-        const dsId = sanitize(ds);
-        for (const exp of impact.affectedExposures) {
-          const expId = sanitize(exp);
-          lines.push(`    ${dsId}:::downstream --> ${expId}:::exposure`);
-        }
+    for (const ds of filteredDownstream) {
+      for (const exp of filteredExposures) {
+        addEdge(ds, exp);
       }
     }
   }
   lines.push("```");
   lines.push("");
-  lines.push("</details>");
+  lines.push(
+    `> \u{1F534} Modified \xA0\xA0 \u{1F7E1} Downstream \xA0\xA0 \u{1F7E3} Exposure${testCount > 0 ? ` \xA0\xA0 \u{1F9EA} ${testCount} tests also affected` : ""}`
+  );
   return lines.join("\n");
 }
 function buildIssuesSection(issues) {

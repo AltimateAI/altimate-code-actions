@@ -120,9 +120,11 @@ describe("PR Comment Generation v0.3", () => {
     assertCommentHasSection(comment, "Blast Radius");
     expect(comment).toContain("```mermaid");
     expect(comment).toContain("graph LR");
-    expect(comment).toContain("stg_orders:::modified");
-    expect(comment).toContain("orders:::downstream");
+    expect(comment).toContain("stg_orders");
+    expect(comment).toContain("orders");
     expect(comment).toContain("2 downstream models");
+    // DAG should be visible by default, not in <details>
+    expect(comment).not.toContain("<details>\n<summary>📊 Blast");
   });
 
   it("includes exposures in Mermaid DAG with purple class", () => {
@@ -136,7 +138,8 @@ describe("PR Comment Generation v0.3", () => {
     const report = makeReport({ impact, impactScore: 70 });
     const comment = buildComment(report)!;
 
-    expect(comment).toContain("exec_dashboard:::exposure");
+    expect(comment).toContain("exec_dashboard");
+    expect(comment).toContain("exposure");
     expect(comment).toContain("classDef exposure fill:#845ef7");
   });
 

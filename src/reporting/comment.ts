@@ -242,85 +242,120 @@ export function buildSummaryTable(report: ReviewReport): string {
 }
 
 /**
+ * Check if a node name looks like a dbt test (not a model/snapshot/exposure).
+ * Test nodes follow patterns like: not_null_model_col, unique_model_col,
+ * accepted_values_model_col__val1__val2, relationships_model_col__ref_other_
+ */
+function isTestNode(name: string): boolean {
+  return /^(not_null|unique|accepted_values|relationships|dbt_utils|dbt_expectations)_/.test(name);
+}
+
+/**
  * Build a Mermaid DAG blast radius diagram.
- * Modified models get red, downstream get yellow, exposures get purple.
+ * - Modified models: red
+ * - Downstream models: yellow
+ * - Exposures: purple
+ * - Test nodes are FILTERED OUT (too noisy)
+ * - DAG is NOT collapsed — it's the visual differentiator
  */
 export function buildMermaidDAG(impact: ImpactResult): string {
-  const totalDownstream =
-    impact.downstreamModels.length + impact.affectedExposures.length;
+  // Filter out test nodes from downstream
+  const filteredDownstream = impact.downstreamModels.filter(
+    (d) => !isTestNode(d),
+  );
+  const filteredExposures = impact.affectedExposures;
+  const totalVisible = filteredDownstream.length + filteredExposures.length;
+
+  // Count how many tests were filtered
+  const testCount =
+    impact.downstreamModels.length - filteredDownstream.length;
+
   const lines: string[] = [];
 
-  lines.push("<details>");
+  // NOT in <details> — visible by default for maximum impact
   lines.push(
-    `<summary>\uD83D\uDCCA Blast Radius \u2014 ${totalDownstream} downstream ${totalDownstream === 1 ? "model" : "models"}</summary>`,
+    `### \uD83D\uDCCA Blast Radius \u2014 ${totalVisible} downstream ${totalVisible === 1 ? "model" : "models"}${testCount > 0 ? ` (${testCount} tests affected)` : ""}`,
   );
   lines.push("");
   lines.push("```mermaid");
   lines.push("graph LR");
   lines.push(
-    "    classDef modified fill:#ff6b6b,stroke:#333,color:#fff",
+    "    classDef modified fill:#ff6b6b,stroke:#c92a2a,color:#fff,stroke-width:2px",
   );
-  lines.push("    classDef downstream fill:#ffd93d,stroke:#333");
   lines.push(
-    "    classDef exposure fill:#845ef7,stroke:#333,color:#fff",
+    "    classDef downstream fill:#ffd43b,stroke:#e67700,color:#333,stroke-width:1px",
+  );
+  lines.push(
+    "    classDef exposure fill:#845ef7,stroke:#5f3dc4,color:#fff,stroke-width:2px",
   );
   lines.push("");
 
-  // Sanitize node IDs for mermaid (replace non-alphanum with _)
   const sanitize = (name: string): string =>
     name.replace(/[^a-zA-Z0-9_]/g, "_");
 
   const modifiedSet = new Set(impact.modifiedModels);
-  const downstreamSet = new Set(impact.downstreamModels);
-  const exposureSet = new Set(impact.affectedExposures);
+  const exposureSet = new Set(filteredExposures);
+  const visibleNodes = new Set([
+    ...impact.modifiedModels,
+    ...filteredDownstream,
+    ...filteredExposures,
+  ]);
 
-  // Use explicit edges if available (from lightweight DAG), otherwise
-  // fall back to the cartesian product approach (modified → downstream).
-  if (impact.edges && impact.edges.length > 0) {
-    for (const edge of impact.edges) {
-      const fromId = sanitize(edge.from);
-      const toId = sanitize(edge.to);
-      const fromClass = modifiedSet.has(edge.from) ? "modified" : "downstream";
-      const toClass = exposureSet.has(edge.to)
+  const edgesAdded = new Set<string>();
+  const addEdge = (from: string, to: string) => {
+    const key = `${from}-->${to}`;
+    if (edgesAdded.has(key)) return;
+    edgesAdded.add(key);
+
+    const fromId = sanitize(from);
+    const toId = sanitize(to);
+    const fromClass = modifiedSet.has(from)
+      ? "modified"
+      : exposureSet.has(from)
         ? "exposure"
-        : downstreamSet.has(edge.to)
-          ? "downstream"
-          : modifiedSet.has(edge.to)
-            ? "modified"
-            : "downstream";
-      lines.push(`    ${fromId}:::${fromClass} --> ${toId}:::${toClass}`);
+        : "downstream";
+    const toClass = exposureSet.has(to)
+      ? "exposure"
+      : modifiedSet.has(to)
+        ? "modified"
+        : "downstream";
+
+    // Use display-friendly labels (strip prefixes for readability)
+    const fromLabel = from.replace(/^(stg_|int_|fct_|dim_|rpt_)/, (m) => m);
+    const toLabel = to.replace(/^(stg_|int_|fct_|dim_|rpt_)/, (m) => m);
+
+    lines.push(
+      `    ${fromId}["${fromLabel}"]:::${fromClass} --> ${toId}["${toLabel}"]:::${toClass}`,
+    );
+  };
+
+  if (impact.edges && impact.edges.length > 0) {
+    // Use explicit edges, filtering out test nodes
+    for (const edge of impact.edges) {
+      if (!visibleNodes.has(edge.from) || !visibleNodes.has(edge.to)) continue;
+      addEdge(edge.from, edge.to);
     }
   } else {
-    // Legacy: cartesian product of modified → downstream
+    // Fallback: connect modified → downstream, downstream → exposures
     for (const mod of impact.modifiedModels) {
-      const modId = sanitize(mod);
-      for (const ds of impact.downstreamModels) {
-        const dsId = sanitize(ds);
-        lines.push(`    ${modId}:::modified --> ${dsId}:::downstream`);
-      }
-      for (const exp of impact.affectedExposures) {
-        const expId = sanitize(exp);
-        lines.push(`    ${modId}:::modified --> ${expId}:::exposure`);
+      for (const ds of filteredDownstream) {
+        addEdge(mod, ds);
       }
     }
-
-    if (
-      impact.downstreamModels.length > 0 &&
-      impact.affectedExposures.length > 0
-    ) {
-      for (const ds of impact.downstreamModels) {
-        const dsId = sanitize(ds);
-        for (const exp of impact.affectedExposures) {
-          const expId = sanitize(exp);
-          lines.push(`    ${dsId}:::downstream --> ${expId}:::exposure`);
-        }
+    for (const ds of filteredDownstream) {
+      for (const exp of filteredExposures) {
+        addEdge(ds, exp);
       }
     }
   }
 
   lines.push("```");
   lines.push("");
-  lines.push("</details>");
+
+  // Legend
+  lines.push(
+    `> \uD83D\uDD34 Modified \u00A0\u00A0 \uD83D\uDFE1 Downstream \u00A0\u00A0 \uD83D\uDFE3 Exposure${testCount > 0 ? ` \u00A0\u00A0 \uD83E\uDDEA ${testCount} tests also affected` : ""}`,
+  );
 
   return lines.join("\n");
 }
