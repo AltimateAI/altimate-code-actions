@@ -394,3 +394,288 @@ Altimate Code Actions includes 19 built-in SQL rules organized by category:
 | `pii-detected` | Column name or literal matches a PII pattern |
 
 Every rule provides a concrete **fix suggestion** in the review comment, so developers know exactly how to resolve each issue.
+
+---
+
+## V2 Configuration Reference
+
+Version 2 delegates static analysis to the `altimate-code check` CLI, providing 40+ checks across 7 categories. V2 is fully backward compatible: if the CLI is unavailable, the action falls back to v1 regex rules automatically.
+
+> For a step-by-step upgrade guide, see [Migrating from v1 to v2](./v2-migration.md).
+
+### Enabling V2
+
+Set `version: 2` at the top of your `.altimate.yml`:
+
+```yaml
+version: 2
+
+checks:
+  lint:
+    enabled: true
+  safety:
+    enabled: true
+```
+
+When `version: 2` is set (or the `checks` key is present), the action routes all enabled checks through a single `altimate-code check` CLI invocation instead of the built-in regex engine.
+
+### Checks Reference
+
+Each check maps to a category in `altimate-code check --checks <list>`. Disable any check by setting `enabled: false`.
+
+| Check | Default | Description | Requirements |
+|-------|---------|-------------|--------------|
+| `lint` | enabled | 26 SQL lint rules (L001-L026) covering correctness, performance, style, and safety | None |
+| `validate` | enabled | SQL syntax validation via the DataFusion engine | None |
+| `safety` | enabled | SQL injection detection, destructive operation flagging, privilege escalation patterns | None |
+| `policy` | disabled | Custom organizational guardrails defined in a policy file | Policy file (`.altimate-policy.yml`) |
+| `pii` | enabled | Personally identifiable information detection in column names, literals, and comments | None |
+| `semantic` | disabled | Schema-aware analysis: join correctness, type mismatches, missing columns | Schema resolution (dbt manifest or DDL files) |
+| `grade` | disabled | SQL quality scoring with letter grades (A-F) and per-file scores | None |
+
+#### Lint Check Options
+
+```yaml
+checks:
+  lint:
+    enabled: true
+    disabled_rules:
+      - L001  # select_star — allow in staging models
+      - L009  # order_by_ordinal
+    severity_overrides:
+      L002: error    # Promote cartesian_join to error
+      L015: critical # Promote function_on_indexed_column to critical
+```
+
+#### Policy Check Options
+
+```yaml
+checks:
+  policy:
+    enabled: true
+    file: .altimate-policy.yml  # Path relative to repo root
+```
+
+See the [Policy Guide](./policy-guide.md) for the full policy file format.
+
+#### PII Check Options
+
+```yaml
+checks:
+  pii:
+    enabled: true
+    categories:
+      - email
+      - ssn
+      - phone
+      - credit_card
+      - ip_address
+```
+
+### Schema Configuration
+
+Schema resolution enables semantic checks and improves lint accuracy. Three sources are supported:
+
+#### dbt Manifest
+
+```yaml
+schema:
+  source: dbt
+  dbt:
+    manifest_path: target/manifest.json
+```
+
+#### DDL / YAML Files
+
+```yaml
+schema:
+  source: files
+  paths:
+    - schema/warehouse.yml
+    - schema/tables.ddl
+```
+
+#### Warehouse (Live Introspection)
+
+```yaml
+schema:
+  source: warehouse
+```
+
+Requires `WAREHOUSE_CONNECTION` environment variable with credentials.
+
+### Policy Configuration
+
+Policies can be defined in two ways:
+
+#### External Policy File
+
+```yaml
+checks:
+  policy:
+    enabled: true
+    file: .altimate-policy.yml
+```
+
+#### Inline Policy
+
+```yaml
+checks:
+  policy:
+    enabled: true
+
+policy:
+  rules:
+    - name: no_drop_table
+      category: data_protection
+      pattern: "\\bDROP\\s+TABLE\\b"
+      message: "DROP TABLE is not allowed"
+      severity: critical
+```
+
+See the [Policy Guide](./policy-guide.md) for the complete rule reference.
+
+### Lint Rules Reference (L001-L026)
+
+| Code | Rule | Default Severity | Description |
+|------|------|-----------------|-------------|
+| L001 | `select_star` | warning | `SELECT *` instead of explicit column list |
+| L002 | `cartesian_join` | error | JOIN without a join condition |
+| L003 | `missing_partition` | warning | Missing partition filter on partitioned table |
+| L004 | `non_deterministic` | warning | Non-deterministic function usage (e.g., `RAND()`, `NOW()`) |
+| L005 | `correlated_subquery` | warning | Correlated subquery that runs per-row |
+| L006 | `implicit_type_cast` | info | Implicit type conversion in comparison |
+| L007 | `or_in_join` | warning | OR condition in JOIN predicate |
+| L008 | `missing_group_by` | error | Aggregate function without GROUP BY |
+| L009 | `order_by_ordinal` | info | ORDER BY using ordinal position |
+| L010 | `union_without_all` | info | UNION where UNION ALL would suffice |
+| L011 | `nested_subquery` | warning | Deeply nested subquery (3+ levels) |
+| L012 | `missing_where_clause` | warning | DELETE or UPDATE without WHERE |
+| L013 | `leading_wildcard_like` | info | LIKE pattern with leading wildcard |
+| L014 | `duplicate_column_alias` | error | Conflicting column names in SELECT |
+| L015 | `function_on_indexed_column` | warning | Function applied to indexed column |
+| L016 | `not_in_with_nulls` | warning | NOT IN with nullable subquery |
+| L017 | `distinct_masking_bad_join` | warning | DISTINCT used to mask duplicate-producing JOIN |
+| L018 | `count_for_existence` | warning | COUNT(*) where EXISTS would be more efficient |
+| L019 | `no_limit_on_delete` | info | DELETE without LIMIT |
+| L020 | `unused_cte` | warning | CTE defined but never referenced |
+| L021 | `ambiguous_column` | warning | Column reference resolving to multiple tables |
+| L022 | `schema_qualification` | info | Unqualified table reference |
+| L023 | `implicit_join` | warning | Comma-separated tables instead of explicit JOIN |
+| L024 | `order_by_in_subquery` | info | ORDER BY in subquery without LIMIT |
+| L025 | `union_type_mismatch` | error | UNION with incompatible column types |
+| L026 | `window_without_partition` | info | Window function without PARTITION BY |
+
+### V2 Configuration Examples
+
+#### Minimal Config
+
+```yaml
+version: 2
+
+checks:
+  lint:
+    enabled: true
+  safety:
+    enabled: true
+```
+
+#### dbt Project Config
+
+```yaml
+version: 2
+
+checks:
+  lint:
+    enabled: true
+  validate:
+    enabled: true
+  safety:
+    enabled: true
+  pii:
+    enabled: true
+    categories: [email, ssn, phone]
+  semantic:
+    enabled: true
+
+schema:
+  source: dbt
+  dbt:
+    manifest_path: target/manifest.json
+
+dialect: snowflake
+```
+
+#### Strict Policy Config
+
+```yaml
+version: 2
+
+checks:
+  lint:
+    enabled: true
+    severity_overrides:
+      L001: error
+      L002: critical
+  validate:
+    enabled: true
+  safety:
+    enabled: true
+  policy:
+    enabled: true
+    file: .altimate-policy.yml
+  pii:
+    enabled: true
+  semantic:
+    enabled: false
+  grade:
+    enabled: false
+
+dialect: bigquery
+```
+
+#### Full Config (All Checks Enabled)
+
+```yaml
+version: 2
+
+checks:
+  lint:
+    enabled: true
+    disabled_rules:
+      - L009  # order_by_ordinal allowed in our codebase
+    severity_overrides:
+      L002: critical
+      L012: critical
+  validate:
+    enabled: true
+  safety:
+    enabled: true
+  policy:
+    enabled: true
+    file: .altimate-policy.yml
+  pii:
+    enabled: true
+    categories:
+      - email
+      - ssn
+      - phone
+      - credit_card
+      - ip_address
+  semantic:
+    enabled: true
+  grade:
+    enabled: true
+
+schema:
+  source: dbt
+  dbt:
+    manifest_path: target/manifest.json
+
+comment:
+  mode: both
+  max_issues_shown: 30
+  show_clean_files: false
+
+dialect: snowflake
+```
