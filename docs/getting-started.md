@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: AltimateAI/altimate-code-actions@v1
+      - uses: AltimateAI/altimate-code-actions@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -41,7 +41,7 @@ This minimal configuration runs static SQL analysis on every pull request. No AP
 If your repository contains a dbt project, enable impact analysis:
 
 ```yaml
-      - uses: AltimateAI/altimate-code-actions@v1
+      - uses: AltimateAI/altimate-code-actions@v0
         with:
           impact_analysis: true
           dbt_project_dir: ./  # path to your dbt_project.yml
@@ -54,7 +54,7 @@ If your repository contains a dbt project, enable impact analysis:
 To get deeper, context-aware analysis using Claude:
 
 ```yaml
-      - uses: AltimateAI/altimate-code-actions@v1
+      - uses: AltimateAI/altimate-code-actions@v0
         with:
           mode: ai
         env:
@@ -98,6 +98,107 @@ Once the workflow completes, Altimate posts a structured review comment on your 
 - Cost estimation (if enabled) showing before/after cost deltas
 
 If you push additional commits, the existing comment is updated in place rather than creating a new one.
+
+## dbt Projects in CI
+
+### Does the action run `dbt compile` automatically?
+
+No. Altimate Code Actions does not run `dbt compile` for you. If your analysis requires a dbt manifest (for impact analysis, downstream dependency tracing, etc.), you must either:
+
+1. **Compile dbt in your workflow** before running the action
+2. **Provide a pre-built manifest** from dbt Cloud or another CI step
+
+### Providing `profiles.yml` for CI
+
+dbt needs a `profiles.yml` to compile. In CI, create a minimal one using environment variables. You can use DuckDB if you only need compilation (no warehouse queries):
+
+```yaml
+# profiles.yml for CI compilation only (no warehouse needed)
+ci:
+  target: ci
+  outputs:
+    ci:
+      type: duckdb
+      path: /tmp/ci.duckdb
+```
+
+For warehouse-connected compilation (e.g., Snowflake):
+
+```yaml
+ci:
+  target: ci
+  outputs:
+    ci:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA') }}"
+```
+
+### Running `dbt deps`
+
+If your dbt project uses packages (defined in `packages.yml`), you must run `dbt deps` before compilation. The action does not install dbt packages for you.
+
+### Complete dbt CI Workflow
+
+```yaml
+name: Altimate dbt Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install dbt-core dbt-snowflake
+
+      - run: dbt deps
+
+      - run: dbt compile --target ci
+
+      - uses: AltimateAI/altimate-code-actions@v0
+        with:
+          mode: static
+          manifest_path: target/manifest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Using a Pre-Built Manifest from dbt Cloud
+
+If you use dbt Cloud CI, you can download the manifest artifact and pass it to the action instead of compiling locally:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+
+  # Download manifest from dbt Cloud (using the dbt Cloud API)
+  - name: Download dbt Cloud manifest
+    run: |
+      curl -H "Authorization: Bearer ${{ secrets.DBT_CLOUD_API_TOKEN }}" \
+        -o target/manifest.json \
+        "https://cloud.getdbt.com/api/v2/accounts/${{ secrets.DBT_CLOUD_ACCOUNT_ID }}/runs/${{ secrets.DBT_CLOUD_RUN_ID }}/artifacts/manifest.json"
+
+  - uses: AltimateAI/altimate-code-actions@v0
+    with:
+      manifest_path: target/manifest.json
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
 
 ## Troubleshooting
 

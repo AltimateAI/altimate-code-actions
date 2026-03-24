@@ -82,7 +82,47 @@ export function buildComment(report: ReviewReport): string {
       ` | ${report.timestamp}</sub>`,
   );
 
-  return sections.join("\n");
+  // FIX 4: Truncate if comment body exceeds GitHub's limit (65536 chars)
+  const MAX_COMMENT_LENGTH = 60000; // leave buffer for marker + overhead
+  let result = sections.join("\n");
+  if (result.length > MAX_COMMENT_LENGTH) {
+    const totalIssues = report.issues.length;
+    // Re-build with truncated issues table
+    const truncatedSections: string[] = [];
+    for (const section of sections) {
+      if (section.startsWith("### SQL Issues")) {
+        // Rebuild issues section with fewer rows
+        const lines = section.split("\n");
+        const headerLines = lines.slice(0, 4); // title, blank, header, separator
+        const dataLines = lines.slice(4);
+        // Keep as many rows as fit
+        let kept = 0;
+        let charBudget = MAX_COMMENT_LENGTH - (result.length - section.length) - 200;
+        const truncatedLines = [...headerLines];
+        for (const line of dataLines) {
+          if (charBudget - line.length < 0) break;
+          charBudget -= line.length;
+          truncatedLines.push(line);
+          kept++;
+        }
+        truncatedLines.push("");
+        truncatedLines.push(
+          `> :warning: **Report truncated** — showing top ${kept} of ${totalIssues} issues. Run locally for the full report.`,
+        );
+        truncatedSections.push(truncatedLines.join("\n"));
+      } else {
+        truncatedSections.push(section);
+      }
+    }
+    result = truncatedSections.join("\n");
+    // Final safety check
+    if (result.length > MAX_COMMENT_LENGTH) {
+      result = result.slice(0, MAX_COMMENT_LENGTH) +
+        "\n\n> :warning: **Report truncated** — run locally for the full report.";
+    }
+  }
+
+  return result;
 }
 
 function buildSummaryLine(report: ReviewReport): string {

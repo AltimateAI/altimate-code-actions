@@ -71,7 +71,14 @@ export async function getManifest(
   // Try reading existing manifest first
   if (existsSync(manifestPath)) {
     core.info(`Reading existing manifest from: ${manifestPath}`);
-    return parseManifestFile(manifestPath);
+    try {
+      return await parseManifestFile(manifestPath);
+    } catch (err) {
+      core.warning(
+        `Failed to parse manifest at ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return undefined;
+    }
   }
 
   // Attempt to compile dbt to generate manifest

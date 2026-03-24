@@ -1,5 +1,11 @@
 import * as core from "@actions/core";
+import * as github from "@actions/github";
 
+import {
+  loadConfig as loadFileConfig,
+  mergeWithInputs,
+} from "./config/loader.js";
+import type { AltimateConfig } from "./config/schema.js";
 import {
   getPRContext,
   getChangedSQLFiles,
@@ -27,13 +33,45 @@ import { Severity, SEVERITY_WEIGHT } from "./analysis/types.js";
 
 async function main(): Promise<void> {
   try {
+    // FIX 8: Skip closed PR events
+    const eventAction = github.context.payload.action;
+    if (eventAction === "closed") {
+      core.info("PR is closed — skipping analysis");
+      return;
+    }
+
+    // FIX 13: Mask warehouse credentials from logs
+    if (process.env.WAREHOUSE_CONNECTION) {
+      core.setSecret(process.env.WAREHOUSE_CONNECTION);
+    }
+
+    // FIX 5: Load .altimate.yml and merge with action inputs
+    const fileConfig = loadFileConfig(".altimate.yml");
+    const mergedFileConfig = mergeWithInputs(fileConfig, {
+      severity_threshold: process.env.SEVERITY_THRESHOLD,
+      dialect: process.env.WAREHOUSE_TYPE,
+      comment_mode: process.env.COMMENT_MODE,
+      max_files: process.env.MAX_FILES ? parseInt(process.env.MAX_FILES, 10) : undefined,
+    });
+
     const config = parseConfig();
-    core.info(`Altimate Code Review — mode: ${config.mode}, model: ${config.model}`);
+    // Attach file config for downstream consumers
+    (config as ActionConfig & { fileConfig?: AltimateConfig }).fileConfig = mergedFileConfig;
+    core.info(`Altimate Code Review — mode: ${config.mode}, model: ${config.model || "(none, static mode)"}`);
 
     // Check for interactive mention events first
     if (config.interactive && isInteractiveMention(config.mentions)) {
       await handleInteractiveMention(config);
       return;
+    }
+
+    // FIX 7: Detect fork PRs
+    const isForkPR =
+      github.context.payload.pull_request?.head?.repo?.fork === true;
+    if (isForkPR) {
+      core.warning(
+        "Fork PR detected — posting comments requires write permissions. Results written to job summary only.",
+      );
     }
 
     // Main PR review flow
@@ -75,14 +113,22 @@ async function main(): Promise<void> {
       timestamp: new Date().toISOString(),
     };
 
-    // Post comment
+    // Post comment (skip for fork PRs — write to job summary instead)
     let commentUrl: string | undefined;
     if (report.issuesFound > 0 || report.impact || report.costEstimates) {
-      commentUrl = await postReviewComment(
-        prContext.prNumber,
-        report,
-        config.commentMode,
-      );
+      if (isForkPR) {
+        const { buildComment } = await import("./reporting/comment.js");
+        const body = buildComment(report);
+        core.summary.addRaw(body);
+        await core.summary.write();
+        core.info("Fork PR — results written to job summary");
+      } else {
+        commentUrl = await postReviewComment(
+          prContext.prNumber,
+          report,
+          config.commentMode,
+        );
+      }
     } else {
       core.info("No findings — skipping PR comment");
     }
@@ -204,7 +250,15 @@ function shouldFail(issues: SQLIssue[], failOn: FailOn): boolean {
  * Environment variables are set by the composite action's env block.
  */
 function parseConfig(): ActionConfig {
-  const model = requireEnv("MODEL");
+  const mode = envEnum("MODE", ["full", "static", "ai"], "full") as ReviewMode;
+  const model = process.env.MODEL ?? "";
+
+  // Model is required for AI-powered modes
+  if (mode !== "static" && !model) {
+    throw new Error(
+      `The 'model' input is required when mode is '${mode}'. Set model (e.g., anthropic/claude-sonnet-4-20250514) or use mode: static.`,
+    );
+  }
 
   let warehouseConnection: Record<string, unknown> | undefined;
   const rawConnection = process.env.WAREHOUSE_CONNECTION;
@@ -222,7 +276,7 @@ function parseConfig(): ActionConfig {
     impactAnalysis: envBool("IMPACT_ANALYSIS", true),
     costEstimation: envBool("COST_ESTIMATION", false),
     piiCheck: envBool("PII_CHECK", true),
-    mode: envEnum("MODE", ["full", "static", "ai"], "full") as ReviewMode,
+    mode,
     interactive: envBool("INTERACTIVE", true),
     mentions: (process.env.MENTIONS ?? "/altimate,/oc")
       .split(",")
@@ -249,13 +303,6 @@ function parseConfig(): ActionConfig {
   };
 }
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Required environment variable ${name} is not set`);
-  }
-  return value;
-}
 
 function envBool(name: string, defaultValue: boolean): boolean {
   const raw = process.env[name];

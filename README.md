@@ -30,6 +30,30 @@ Altimate Code Actions brings production-grade SQL analysis, dbt impact assessmen
 
 ## Quick Start
 
+### Zero-Config (Static Analysis Only)
+
+No API key needed. Catches SQL anti-patterns, schema breaking changes, and PII exposure.
+
+```yaml
+- uses: AltimateAI/altimate-code-actions@v0
+  with:
+    mode: static
+```
+
+### With AI Review
+
+Add an LLM for deeper analysis:
+
+```yaml
+- uses: AltimateAI/altimate-code-actions@v0
+  with:
+    model: anthropic/claude-haiku-4-5-20251001
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+### Full Workflow Example
+
 Add this workflow to your repository at `.github/workflows/altimate-review.yml`:
 
 ```yaml
@@ -47,7 +71,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: AltimateAI/altimate-code-actions@v1
+      - uses: AltimateAI/altimate-code-actions@v0
+        with:
+          mode: static
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -132,28 +158,41 @@ Enable with `pii_check: true`:
 
 - Detects 15 PII categories: email, phone, SSN, credit card, IP address, date of birth, name, address, passport, driver license, national ID, bank account, health records, biometric data, geolocation
 
+## What Altimate Adds Beyond dbt Cloud
+
+| Feature | dbt Cloud CI | Altimate Code |
+|---------|-------------|---------------|
+| Slim CI (build changed models) | Yes | No (use dbt Cloud for this) |
+| SQL anti-pattern detection | No | Yes (14 rules) |
+| Impact blast radius in PR | Limited | Yes (full DAG visualization) |
+| Query cost estimation | No | Yes (Snowflake, BigQuery) |
+| PII detection | No | Yes (15 categories) |
+| Schema breaking changes | No | Yes |
+| AI-powered review | No | Yes |
+
+Altimate Code Actions and dbt Cloud CI are complementary. Use dbt Cloud for build/test orchestration and slim CI, and Altimate for deep SQL quality analysis, cost estimation, and PII detection on every pull request.
+
 ## Configuration
 
 ### Inputs
 
-All inputs are optional. Defaults produce a useful static analysis review.
-
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `model` | string | `anthropic/claude-haiku-4-5-20251001` | AI model for analysis (only used in `ai` and `full` modes) |
-| `mode` | string | `static` | Review mode: `static`, `ai`, or `full` |
+| `model` | string | `""` | AI model for analysis (e.g., `anthropic/claude-haiku-4-5-20251001`). Required for `ai` and `full` modes. |
+| `mode` | string | `full` | Review mode: `static`, `ai`, or `full` |
 | `sql_review` | boolean | `true` | Enable SQL quality analysis |
-| `impact_analysis` | boolean | `false` | Enable dbt DAG impact analysis |
+| `impact_analysis` | boolean | `true` | Enable dbt DAG impact analysis |
 | `cost_estimation` | boolean | `false` | Enable query cost estimation |
-| `pii_check` | boolean | `false` | Enable PII detection |
-| `interactive` | boolean | `false` | Enable interactive mode (`@altimate` mentions in PR comments) |
-| `mentions` | string | `@altimate` | Trigger phrases for interactive mode (comma-separated) |
+| `pii_check` | boolean | `true` | Enable PII detection |
+| `interactive` | boolean | `true` | Enable interactive mode (`/altimate` mentions in PR comments) |
+| `mentions` | string | `/altimate,/oc` | Trigger phrases for interactive mode (comma-separated) |
 | `dbt_project_dir` | string | *(auto-detect)* | Path to dbt project root |
 | `dbt_version` | string | *(auto-detect)* | dbt version: `1.7`, `1.8`, or `1.9` |
 | `manifest_path` | string | *(auto-detect)* | Path to dbt `manifest.json` |
-| `warehouse_type` | string | | Warehouse type: `snowflake`, `bigquery`, `postgres`, `databricks`, `redshift`, `mysql`, `sqlserver`, `duckdb` |
+| `warehouse_type` | string | | Warehouse type: `snowflake`, `bigquery`, `postgres`, `databricks`, `redshift` |
+| `warehouse_connection` | string | | JSON warehouse connection config (alternative to env vars) |
 | `max_files` | number | `50` | Maximum number of SQL files to analyze per PR |
-| `severity_threshold` | string | `info` | Minimum severity to include in review: `info`, `warning`, `error`, `critical` |
+| `severity_threshold` | string | `warning` | Minimum severity to include in review: `info`, `warning`, `error`, `critical` |
 | `comment_mode` | string | `single` | Comment style: `single` (one summary comment), `inline` (per-line comments), `both` |
 | `fail_on` | string | `none` | Fail the action when issues at this severity or above are found: `none`, `error`, `critical` |
 
@@ -162,9 +201,8 @@ All inputs are optional. Defaults produce a useful static analysis review.
 | Output | Description |
 |--------|-------------|
 | `issues_found` | Total number of issues found |
-| `files_analyzed` | Number of SQL files analyzed |
 | `impact_score` | dbt impact score (0-100), if impact analysis was enabled |
-| `cost_delta` | Estimated monthly cost delta in USD, if cost estimation was enabled |
+| `estimated_cost_delta` | Estimated monthly cost delta in USD, if cost estimation was enabled |
 | `comment_url` | URL of the posted PR comment |
 | `report_json` | Full review report as a JSON string |
 
@@ -187,7 +225,9 @@ All inputs are optional. Defaults produce a useful static analysis review.
 Static analysis only, no API keys required:
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
+  with:
+    mode: static
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -197,7 +237,7 @@ Static analysis only, no API keys required:
 Use Claude for deeper analysis:
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
   with:
     mode: ai
     model: anthropic/claude-haiku-4-5-20251001
@@ -209,9 +249,10 @@ Use Claude for deeper analysis:
 ### dbt Project with Impact Analysis
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
   with:
     mode: full
+    model: anthropic/claude-haiku-4-5-20251001
     impact_analysis: true
     dbt_project_dir: ./dbt
   env:
@@ -222,9 +263,10 @@ Use Claude for deeper analysis:
 ### Full Review with Cost Estimation
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
   with:
     mode: full
+    model: anthropic/claude-sonnet-4-20250514
     impact_analysis: true
     cost_estimation: true
     pii_check: true
@@ -257,11 +299,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: AltimateAI/altimate-code-actions@v1
+      - uses: AltimateAI/altimate-code-actions@v0
         with:
           interactive: true
           mentions: "@altimate,@alt"
           mode: full
+          model: anthropic/claude-sonnet-4-20250514
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -272,8 +315,9 @@ jobs:
 Only surface errors and critical issues, and fail the CI check:
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
   with:
+    mode: static
     severity_threshold: error
     fail_on: error
   env:
@@ -285,8 +329,9 @@ Only surface errors and critical issues, and fail the CI check:
 Post review comments directly on the changed lines:
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
   with:
+    mode: static
     comment_mode: both
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

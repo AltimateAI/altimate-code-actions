@@ -33,11 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: AltimateAI/altimate-code-actions@v1
+      - uses: AltimateAI/altimate-code-actions@v0
         with:
           interactive: true
           mentions: "@altimate,@alt"
           mode: full
+          model: anthropic/claude-sonnet-4-20250514
           impact_analysis: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

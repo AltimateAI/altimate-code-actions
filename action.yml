@@ -6,8 +6,9 @@ branding:
 
 inputs:
   model:
-    description: "LLM model to use (e.g., anthropic/claude-sonnet-4-20250514)"
-    required: true
+    description: "LLM model to use (e.g., anthropic/claude-sonnet-4-20250514). Required for 'ai' and 'full' modes."
+    required: false
+    default: ""
 
   sql_review:
     description: "Enable SQL quality analysis (anti-patterns, formatting)"
@@ -96,7 +97,7 @@ runs:
       id: version
       shell: bash
       run: |
-        VERSION=$(curl -sf https://api.github.com/repos/AltimateAI/altimate-code/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+        VERSION=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/AltimateAI/altimate-code/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
         echo "version=${VERSION:-latest}" >> $GITHUB_OUTPUT
 
     - name: Cache altimate-code
@@ -115,10 +116,24 @@ runs:
       shell: bash
       run: echo "$HOME/.altimate-code/bin" >> $GITHUB_PATH
 
+    - name: Verify installation
+      shell: bash
+      run: altimate-code --version || (echo "::error::altimate-code installation failed" && exit 1)
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: "22"
+
+    - name: Validate model input
+      shell: bash
+      run: |
+        MODE="${{ inputs.mode }}"
+        MODEL="${{ inputs.model }}"
+        if [ "$MODE" != "static" ] && [ -z "$MODEL" ]; then
+          echo "::error::The 'model' input is required when mode is '$MODE'. Set model (e.g., anthropic/claude-sonnet-4-20250514) or use mode: static."
+          exit 1
+        fi
 
     - name: Run analysis
       id: analyze

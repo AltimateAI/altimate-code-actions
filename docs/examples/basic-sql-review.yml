@@ -22,8 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: AltimateAI/altimate-code-actions@v1
+      - uses: AltimateAI/altimate-code-actions@v0
         id: review
+        with:
+          mode: static
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -27,10 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: AltimateAI/altimate-code-actions@v1
+      - uses: AltimateAI/altimate-code-actions@v0
         id: review
         with:
           mode: full
+          model: anthropic/claude-sonnet-4-20250514
           sql_review: true
           impact_analysis: true
           cost_estimation: true
@@ -53,5 +54,5 @@ jobs:
           echo "Files analyzed: ${{ steps.review.outputs.files_analyzed }}"
           echo "Issues found: ${{ steps.review.outputs.issues_found }}"
           echo "Impact score: ${{ steps.review.outputs.impact_score }}/100"
-          echo "Cost delta: \$${{ steps.review.outputs.cost_delta }}/mo"
+          echo "Cost delta: \$${{ steps.review.outputs.estimated_cost_delta }}/mo"
           echo "Comment: ${{ steps.review.outputs.comment_url }}"

@@ -1,0 +1,46 @@
+# Monorepo dbt Review
+#
+# For repositories where the dbt project lives in a subdirectory (e.g., analytics/dbt/).
+# The action auto-detects dbt_project.yml, but you can explicitly set dbt_project_dir
+# to avoid ambiguity in monorepos with multiple dbt projects.
+#
+# Copy this file to .github/workflows/altimate-review.yml in your repository.
+
+name: Altimate dbt Review (Monorepo)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - 'analytics/dbt/**'
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    name: Altimate dbt Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # If your dbt project uses packages, install them first
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt and compile
+        working-directory: analytics/dbt
+        run: |
+          pip install dbt-core dbt-snowflake
+          dbt deps
+          dbt compile --target ci
+
+      - uses: AltimateAI/altimate-code-actions@v0
+        with:
+          mode: static
+          dbt_project_dir: analytics/dbt
+          manifest_path: analytics/dbt/target/manifest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

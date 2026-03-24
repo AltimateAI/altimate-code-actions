@@ -3,10 +3,41 @@ import * as github from "@actions/github";
 import type { ChangedFile } from "../analysis/types.js";
 
 const COMMENT_MARKER = "<!-- altimate-code-review -->";
+const MAX_PAGINATION_PAGES = 50;
 
 type Octokit = ReturnType<typeof github.getOctokit>;
 
 let _octokit: Octokit | null = null;
+
+/**
+ * FIX 9: Retry helper for Octokit API calls.
+ * Retries on 5xx and 429 errors with exponential backoff (1s, 2s, 4s).
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      lastError = err;
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? (err as { status: number }).status
+          : 0;
+      const isRetryable = status === 429 || (status >= 500 && status < 600);
+      if (!isRetryable || attempt === maxRetries - 1) {
+        throw err;
+      }
+      const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+      core.debug(`Retrying API call in ${delay}ms (attempt ${attempt + 1}/${maxRetries}, status ${status})`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
 
 /** Get an authenticated Octokit instance. Uses GITHUB_TOKEN from environment. */
 export function getOctokit(): Octokit {
@@ -44,14 +75,17 @@ export async function getChangedFiles(prNumber: number): Promise<ChangedFile[]> 
   let page = 1;
   const perPage = 100;
 
-  while (true) {
-    const response = await octokit.rest.pulls.listFiles({
-      owner,
-      repo,
-      pull_number: prNumber,
-      per_page: perPage,
-      page,
-    });
+  // FIX 10: Add pagination limit to prevent runaway loops
+  while (page <= MAX_PAGINATION_PAGES) {
+    const response = await withRetry(() =>
+      octokit.rest.pulls.listFiles({
+        owner,
+        repo,
+        pull_number: prNumber,
+        per_page: perPage,
+        page,
+      }),
+    );
 
     for (const file of response.data) {
       files.push({
@@ -67,6 +101,12 @@ export async function getChangedFiles(prNumber: number): Promise<ChangedFile[]> 
     page++;
   }
 
+  if (page > MAX_PAGINATION_PAGES) {
+    core.warning(
+      `Reached pagination limit (${MAX_PAGINATION_PAGES} pages). Some files may be missing.`,
+    );
+  }
+
   return files;
 }
 
@@ -80,12 +120,14 @@ export async function getFileContent(
   const octokit = getOctokit();
   const { owner, repo } = getRepo();
 
-  const response = await octokit.rest.repos.getContent({
-    owner,
-    repo,
-    path: filePath,
-    ref,
-  });
+  const response = await withRetry(() =>
+    octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path: filePath,
+      ref,
+    }),
+  );
 
   const data = response.data;
   if ("content" in data && data.encoding === "base64") {
@@ -112,23 +154,40 @@ export async function postComment(
   const existingId = await findExistingCommentId(prNumber);
 
   if (existingId) {
-    core.debug(`Updating existing comment ${existingId}`);
-    const response = await octokit.rest.issues.updateComment({
-      owner,
-      repo,
-      comment_id: existingId,
-      body: markedBody,
-    });
-    return response.data.html_url;
+    // FIX 11: Handle 404 on comment update — fall back to creating a new comment
+    try {
+      core.debug(`Updating existing comment ${existingId}`);
+      const response = await withRetry(() =>
+        octokit.rest.issues.updateComment({
+          owner,
+          repo,
+          comment_id: existingId,
+          body: markedBody,
+        }),
+      );
+      return response.data.html_url;
+    } catch (err: unknown) {
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? (err as { status: number }).status
+          : 0;
+      if (status === 404) {
+        core.debug("Existing comment was deleted — creating a new one");
+      } else {
+        throw err;
+      }
+    }
   }
 
   core.debug("Creating new PR comment");
-  const response = await octokit.rest.issues.createComment({
-    owner,
-    repo,
-    issue_number: prNumber,
-    body: markedBody,
-  });
+  const response = await withRetry(() =>
+    octokit.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: prNumber,
+      body: markedBody,
+    }),
+  );
   return response.data.html_url;
 }
 
@@ -170,14 +229,16 @@ async function findExistingCommentId(
   let page = 1;
   const perPage = 50;
 
-  while (true) {
-    const response = await octokit.rest.issues.listComments({
-      owner,
-      repo,
-      issue_number: prNumber,
-      per_page: perPage,
-      page,
-    });
+  while (page <= MAX_PAGINATION_PAGES) {
+    const response = await withRetry(() =>
+      octokit.rest.issues.listComments({
+        owner,
+        repo,
+        issue_number: prNumber,
+        per_page: perPage,
+        page,
+      }),
+    );
 
     for (const comment of response.data) {
       if (comment.body?.startsWith(COMMENT_MARKER)) {

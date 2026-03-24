@@ -10,12 +10,12 @@ Inputs are set in the `with:` block of your workflow step. All inputs are option
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `mode` | string | `static` | Review mode. `static` runs rule-based analysis only (no API key needed). `ai` uses an AI model for deeper review. `full` combines both. |
-| `model` | string | `anthropic/claude-haiku-4-5-20251001` | AI model identifier. Used only in `ai` and `full` modes. Supports Anthropic (`anthropic/claude-*`) and OpenAI (`openai/gpt-*`) model names. |
+| `mode` | string | `full` | Review mode. `static` runs rule-based analysis only (no API key needed). `ai` uses an AI model for deeper review. `full` combines both. |
+| `model` | string | *(required)* | AI model identifier (e.g., `anthropic/claude-haiku-4-5-20251001`). Required. Used in `ai` and `full` modes. Supports Anthropic (`anthropic/claude-*`) and OpenAI (`openai/gpt-*`) model names. |
 | `sql_review` | boolean | `true` | Enable SQL quality analysis. Set to `false` to skip static SQL checks. |
-| `impact_analysis` | boolean | `false` | Enable dbt DAG impact analysis. Requires a dbt project in the repository. |
+| `impact_analysis` | boolean | `true` | Enable dbt DAG impact analysis. Requires a dbt project in the repository. |
 | `cost_estimation` | boolean | `false` | Enable query cost estimation. Requires `warehouse_type` and warehouse credentials. |
-| `pii_check` | boolean | `false` | Enable PII detection. Scans column names and string literals for personally identifiable information. |
+| `pii_check` | boolean | `true` | Enable PII detection. Scans column names and string literals for personally identifiable information. |
 
 ### dbt Configuration
 
@@ -29,7 +29,8 @@ Inputs are set in the `with:` block of your workflow step. All inputs are option
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `warehouse_type` | string | | Warehouse dialect for cost estimation and SQL dialect awareness. Supported values: `snowflake`, `bigquery`, `postgres`, `databricks`, `redshift`, `mysql`, `sqlserver`, `duckdb`. |
+| `warehouse_type` | string | | Warehouse dialect for cost estimation and SQL dialect awareness. Supported values: `snowflake`, `bigquery`, `postgres`, `databricks`, `redshift`. |
+| `warehouse_connection` | string | | JSON warehouse connection config. Alternative to setting individual credential environment variables. |
 
 Warehouse credentials are passed via environment variables, not action inputs. See the [Environment Variables](#environment-variables) section below.
 
@@ -37,7 +38,7 @@ Warehouse credentials are passed via environment variables, not action inputs. S
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `severity_threshold` | string | `info` | Minimum severity to include in the review. Issues below this threshold are silently dropped. Values: `info`, `warning`, `error`, `critical`. |
+| `severity_threshold` | string | `warning` | Minimum severity to include in the review. Issues below this threshold are silently dropped. Values: `info`, `warning`, `error`, `critical`. |
 | `fail_on` | string | `none` | Fail the GitHub Actions step when issues at this severity or above are found. `none` means the step always succeeds. `error` fails on errors and criticals. `critical` fails only on criticals. |
 | `comment_mode` | string | `single` | How to post review feedback. `single` posts one summary comment on the PR. `inline` posts individual comments on changed lines. `both` does both. |
 | `max_files` | number | `50` | Maximum number of SQL files to analyze per PR. When the PR exceeds this limit, the most-changed files (by additions) are prioritized. |
@@ -46,8 +47,8 @@ Warehouse credentials are passed via environment variables, not action inputs. S
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| `interactive` | boolean | `false` | Enable interactive mode. When true, the action responds to trigger phrases in PR comments instead of running automatically. |
-| `mentions` | string | `@altimate` | Comma-separated list of trigger phrases. When a PR comment starts with any of these phrases, the action runs a review. |
+| `interactive` | boolean | `true` | Enable interactive mode. When true, the action responds to trigger phrases in PR comments instead of running automatically. |
+| `mentions` | string | `/altimate,/oc` | Comma-separated list of trigger phrases. When a PR comment contains any of these phrases, the action runs a review. |
 
 ## Action Outputs
 
@@ -56,9 +57,8 @@ Outputs are available to subsequent steps via `${{ steps.<step-id>.outputs.<outp
 | Output | Type | Description |
 |--------|------|-------------|
 | `issues_found` | number | Total number of issues found across all analyzed files |
-| `files_analyzed` | number | Number of SQL files that were analyzed |
 | `impact_score` | number | dbt impact score from 0 (no risk) to 100 (high risk). Only set when `impact_analysis: true` |
-| `cost_delta` | number | Estimated monthly cost delta in USD (positive = more expensive). Only set when `cost_estimation: true` |
+| `estimated_cost_delta` | number | Estimated monthly cost delta in USD (positive = more expensive). Only set when `cost_estimation: true` |
 | `comment_url` | string | URL of the PR comment that was posted or updated |
 | `report_json` | string | Full `ReviewReport` object serialized as JSON |
 
@@ -66,7 +66,7 @@ Outputs are available to subsequent steps via `${{ steps.<step-id>.outputs.<outp
 
 ```yaml
 steps:
-  - uses: AltimateAI/altimate-code-actions@v1
+  - uses: AltimateAI/altimate-code-actions@v0
     id: review
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -75,6 +75,7 @@ steps:
     run: |
       echo "Issues found: ${{ steps.review.outputs.issues_found }}"
       echo "Impact score: ${{ steps.review.outputs.impact_score }}"
+      echo "Cost delta: ${{ steps.review.outputs.estimated_cost_delta }}"
       echo "Comment: ${{ steps.review.outputs.comment_url }}"
 ```
 
@@ -132,6 +133,28 @@ Required when `warehouse_type: postgres` and `cost_estimation: true`:
 | `POSTGRES_PASSWORD` | PostgreSQL password |
 | `POSTGRES_DATABASE` | Database name |
 
+### Databricks Credentials
+
+Required when `warehouse_type: databricks` and `cost_estimation: true`:
+
+| Variable | Description |
+|----------|-------------|
+| `DATABRICKS_HOST` | Databricks workspace URL (e.g., `https://dbc-abc123.cloud.databricks.com`) |
+| `DATABRICKS_HTTP_PATH` | HTTP path for the SQL warehouse or cluster (e.g., `/sql/1.0/warehouses/abc123`) |
+| `DATABRICKS_TOKEN` | Databricks personal access token |
+
+### Redshift Credentials
+
+Required when `warehouse_type: redshift` and `cost_estimation: true`:
+
+| Variable | Description |
+|----------|-------------|
+| `REDSHIFT_HOST` | Redshift cluster endpoint (e.g., `my-cluster.abc123.us-east-1.redshift.amazonaws.com`) |
+| `REDSHIFT_PORT` | (Optional) Port, defaults to 5439 |
+| `REDSHIFT_USER` | Redshift username |
+| `REDSHIFT_PASSWORD` | Redshift password |
+| `REDSHIFT_DATABASE` | Database name |
+
 ## Configuration File (`.altimate.yml`)
 
 In addition to action inputs, you can place an `.altimate.yml` file at the repository root for persistent configuration that applies to every PR:
@@ -169,12 +192,27 @@ pii_allowlist:
 
 Action inputs override `.altimate.yml` settings when both are specified.
 
+### Suppress Clean Comments
+
+```yaml
+# .altimate.yml
+
+# When no issues are found, suppress the "All checks passed" comment entirely
+suppress_clean_comments: true
+```
+
+## "No Findings" Behavior
+
+When the action analyzes your PR and finds no issues, it posts a brief "All checks passed" comment on the pull request. This confirms that the review ran successfully and your SQL is clean.
+
+If you prefer not to receive a comment when there are no findings, set `suppress_clean_comments: true` in your `.altimate.yml` file. When enabled, the action skips posting entirely if no issues are found.
+
 ## Warehouse Connection Examples
 
 ### Snowflake
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
   with:
     cost_estimation: true
     warehouse_type: snowflake
@@ -190,7 +228,7 @@ Action inputs override `.altimate.yml` settings when both are specified.
 ### BigQuery
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
   with:
     cost_estimation: true
     warehouse_type: bigquery
@@ -203,7 +241,7 @@ Action inputs override `.altimate.yml` settings when both are specified.
 ### PostgreSQL
 
 ```yaml
-- uses: AltimateAI/altimate-code-actions@v1
+- uses: AltimateAI/altimate-code-actions@v0
   with:
     cost_estimation: true
     warehouse_type: postgres
@@ -213,4 +251,33 @@ Action inputs override `.altimate.yml` settings when both are specified.
     POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
     POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
     POSTGRES_DATABASE: analytics
+```
+
+### Databricks
+
+```yaml
+- uses: AltimateAI/altimate-code-actions@v0
+  with:
+    cost_estimation: true
+    warehouse_type: databricks
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+    DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
+    DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+```
+
+### Redshift
+
+```yaml
+- uses: AltimateAI/altimate-code-actions@v0
+  with:
+    cost_estimation: true
+    warehouse_type: redshift
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    REDSHIFT_HOST: ${{ secrets.REDSHIFT_HOST }}
+    REDSHIFT_USER: ${{ secrets.REDSHIFT_USER }}
+    REDSHIFT_PASSWORD: ${{ secrets.REDSHIFT_PASSWORD }}
+    REDSHIFT_DATABASE: analytics
 ```
