@@ -55,10 +55,21 @@ export function buildComment(report: ReviewReport): string | null {
 
   // Section 4: Mermaid DAG blast radius (visible by default)
   if (report.impact && report.impact.modifiedModels.length > 0) {
-    const totalDownstream =
-      report.impact.downstreamModels.length + report.impact.affectedExposures.length;
-    if (totalDownstream > 0) {
+    const filteredDownstream = report.impact.downstreamModels.filter(
+      (d) => !/^(not_null|unique|accepted_values|relationships|dbt_utils|dbt_expectations)_/.test(d),
+    );
+    const visibleNodes = filteredDownstream.length + report.impact.affectedExposures.length;
+    const testCount = report.impact.downstreamModels.length - filteredDownstream.length;
+
+    if (visibleNodes > 0) {
+      // Has real downstream models — show Mermaid DAG
       sections.push(buildMermaidDAG(report.impact));
+      sections.push("");
+    } else if (testCount > 0) {
+      // Only test nodes downstream — show text summary instead of empty graph
+      sections.push(
+        `### \uD83D\uDCCA Impact — ${report.impact.modifiedModels.join(", ")} (\uD83E\uDDEA ${testCount} tests depend on this model)`,
+      );
       sections.push("");
     }
   }
