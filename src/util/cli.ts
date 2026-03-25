@@ -25,7 +25,11 @@ interface CLIOptions {
 export async function runCLI(args: string[], options: CLIOptions = {}): Promise<CLIResult> {
   const { env: extraEnv = {}, cwd, timeout = DEFAULT_TIMEOUT_MS, parseJson = false } = options;
 
-  const command = "altimate-code";
+  // Try full path first (GitHub Actions installs to ~/.altimate-code/bin/),
+  // then fall back to PATH lookup
+  const homeBin = `${process.env.HOME}/.altimate-code/bin/altimate-code`;
+  const command =
+    process.env.HOME && require("fs").existsSync(homeBin) ? homeBin : "altimate-code";
   core.debug(`Running CLI: ${command} ${args.join(" ")}`);
 
   return new Promise<CLIResult>((resolve, reject) => {
