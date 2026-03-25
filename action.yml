@@ -93,37 +93,26 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Get altimate-code version
-      id: version
-      shell: bash
-      run: |
-        # Try with token first, fall back to unauthenticated
-        VERSION=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/AltimateAI/altimate-code/releases/latest 2>/dev/null | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
-        if [ -z "$VERSION" ]; then
-          VERSION=$(curl -sf https://api.github.com/repos/AltimateAI/altimate-code/releases/latest 2>/dev/null | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
-        fi
-        if [ -z "$VERSION" ]; then
-          echo "::warning::Could not determine altimate-code version — using v0.5.10 as fallback"
-          VERSION="v0.5.10"
-        fi
-        echo "version=${VERSION}" >> $GITHUB_OUTPUT
-        echo "Resolved altimate-code version: ${VERSION}"
-
     - name: Install altimate-code
       shell: bash
       run: |
-        VERSION="${{ steps.version.outputs.version }}"
-        echo "Installing altimate-code ${VERSION} via npm..."
-        npm install -g "@altimateai/altimate-code@${VERSION#v}" 2>&1 || \
-        npm install -g @altimateai/altimate-code@latest 2>&1 || \
-        echo "::warning::Failed to install altimate-code — falling back to regex rules"
+        echo "Installing altimate-code via npm..."
+        npm install -g @altimateai/altimate-code@latest 2>&1
 
-        # Verify
+        # Verify and check if `check` command is available
         if command -v altimate-code >/dev/null 2>&1; then
-          echo "altimate-code $(altimate-code --version 2>/dev/null || echo 'installed')"
-          altimate-code check --help >/dev/null 2>&1 && echo "check command: available" || echo "check command: not available"
+          VERSION=$(altimate-code --version 2>/dev/null || echo "unknown")
+          echo "altimate-code ${VERSION} installed"
+
+          # Test if check command exists (added in v0.5.10+)
+          if altimate-code check --help >/dev/null 2>&1; then
+            echo "check command: available"
+          else
+            echo "check command: not available in v${VERSION} — will use regex rules"
+            echo "::notice::altimate-code check requires v0.5.10+. Current: v${VERSION}. Publish to npm to enable AST-based analysis."
+          fi
         else
-          echo "::warning::altimate-code not found on PATH after install"
+          echo "::warning::altimate-code not found after npm install — regex rules only"
         fi
 
     - name: Setup Node.js
