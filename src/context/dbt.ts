@@ -171,8 +171,12 @@ export function getDownstreamModels(modelIds: string[], manifest: DBTManifest): 
     for (const child of children) {
       if (!visited.has(child)) {
         visited.add(child);
-        downstream.push(child);
-        queue.push(child);
+        // Only include models, snapshots, and analyses — not tests
+        // dbt node IDs follow the format: resource_type.project.name
+        if (!child.startsWith("test.")) {
+          downstream.push(child);
+        }
+        queue.push(child); // Still traverse through tests to find models beyond them
       }
     }
   }

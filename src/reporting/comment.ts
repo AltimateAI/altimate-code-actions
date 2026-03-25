@@ -367,7 +367,11 @@ export function buildQueryProfile(profiles: QueryProfile[]): string {
  * accepted_values_model_col__val1__val2, relationships_model_col__ref_other_
  */
 function isTestNode(name: string): boolean {
-  return /^(not_null|unique|accepted_values|relationships|dbt_utils|dbt_expectations)_/.test(name);
+  // Standard dbt generic tests
+  if (/^(not_null|unique|accepted_values|relationships|dbt_utils|dbt_expectations)_/.test(name)) return true;
+  // Singular tests (typically start with "assert_" or "test_")
+  if (/^(assert|test)_/.test(name)) return true;
+  return false;
 }
 
 /**

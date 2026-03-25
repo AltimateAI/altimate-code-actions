@@ -189,12 +189,16 @@ export function extractValidationSummary(output: CheckOutput): ValidationSummary
           ? `${meta.method} against ${output.files_checked} table schemas`
           : meta.method;
 
+      // Always show example patterns in the "How" column — this demonstrates
+      // what we checked even when everything passes
+      const methodDisplay =
+        meta.examples.length > 0
+          ? `${methodWithContext}: ${meta.examples.join(", ")}`
+          : methodWithContext;
+
       categories[check] = {
         label: meta.ruleCount > 0 ? `${meta.label} (${meta.ruleCount} rules)` : meta.label,
-        method:
-          findingsCount === 0 && meta.examples.length > 0
-            ? `${methodWithContext}: ${meta.examples.join(", ")}, ...`
-            : methodWithContext,
+        method: methodDisplay,
         rulesChecked: meta.ruleCount,
         findingsCount,
         passed: findingsCount === 0,

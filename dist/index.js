@@ -24384,7 +24384,9 @@ function buildQueryProfile(profiles) {
   return lines.join("\n");
 }
 function isTestNode(name) {
-  return /^(not_null|unique|accepted_values|relationships|dbt_utils|dbt_expectations)_/.test(name);
+  if (/^(not_null|unique|accepted_values|relationships|dbt_utils|dbt_expectations)_/.test(name)) return true;
+  if (/^(assert|test)_/.test(name)) return true;
+  return false;
 }
 function buildMermaidDAG(impact) {
   const filteredDownstream = impact.downstreamModels.filter((d) => !isTestNode(d));
@@ -27702,9 +27704,10 @@ function extractValidationSummary(output) {
     const findingsCount = result?.findings?.length ?? 0;
     if (meta) {
       const methodWithContext = check === "validate" && schemaResolved && output.files_checked > 0 ? `${meta.method} against ${output.files_checked} table schemas` : meta.method;
+      const methodDisplay = meta.examples.length > 0 ? `${methodWithContext}: ${meta.examples.join(", ")}` : methodWithContext;
       categories[check] = {
         label: meta.ruleCount > 0 ? `${meta.label} (${meta.ruleCount} rules)` : meta.label,
-        method: findingsCount === 0 && meta.examples.length > 0 ? `${methodWithContext}: ${meta.examples.join(", ")}, ...` : methodWithContext,
+        method: methodDisplay,
         rulesChecked: meta.ruleCount,
         findingsCount,
         passed: findingsCount === 0
@@ -28856,7 +28859,9 @@ function getDownstreamModels(modelIds, manifest) {
     for (const child of children) {
       if (!visited.has(child)) {
         visited.add(child);
-        downstream.push(child);
+        if (!child.startsWith("test.")) {
+          downstream.push(child);
+        }
         queue.push(child);
       }
     }

@@ -552,8 +552,8 @@ describe("extractValidationSummary", () => {
 
     expect(summary.categories.lint.passed).toBe(false);
     expect(summary.categories.lint.findingsCount).toBe(2);
-    // When findings exist, method should NOT include examples
-    expect(summary.categories.lint.method).toBe("AST analysis");
+    // Examples are always shown to demonstrate what was checked
+    expect(summary.categories.lint.method).toContain("AST analysis");
   });
 
   it("includes schema resolution info for validate category", () => {
