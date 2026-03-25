@@ -27473,8 +27473,7 @@ import { spawn } from "node:child_process";
 var DEFAULT_TIMEOUT_MS = 3e5;
 async function runCLI(args, options = {}) {
   const { env: extraEnv = {}, cwd, timeout = DEFAULT_TIMEOUT_MS, parseJson = false } = options;
-  const homeBin = `${process.env.HOME}/.altimate-code/bin/altimate-code`;
-  const command = process.env.HOME && __require("fs").existsSync(homeBin) ? homeBin : "altimate-code";
+  const command = "altimate-code";
   core3.debug(`Running CLI: ${command} ${args.join(" ")}`);
   return new Promise((resolve2, reject) => {
     const child = spawn(command, args, {

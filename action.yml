@@ -109,68 +109,21 @@ runs:
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
         echo "Resolved altimate-code version: ${VERSION}"
 
-    - name: Cache altimate-code
-      id: cache
-      uses: actions/cache@v4
-      with:
-        path: ~/.altimate-code/bin
-        key: altimate-code-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
-
     - name: Install altimate-code
-      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        # Download binary directly from GitHub releases
         VERSION="${{ steps.version.outputs.version }}"
-        ARCH=$(uname -m)
-        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        echo "Installing altimate-code ${VERSION} via npm..."
+        npm install -g "@altimateai/altimate-code@${VERSION#v}" 2>&1 || \
+        npm install -g @altimateai/altimate-code@latest 2>&1 || \
+        echo "::warning::Failed to install altimate-code — falling back to regex rules"
 
-        # Map architecture names
-        case "$ARCH" in
-          x86_64) ARCH="x64" ;;
-          aarch64|arm64) ARCH="arm64" ;;
-        esac
-
-        ASSET="altimate-code-${OS}-${ARCH}"
-        if [ "$OS" = "linux" ]; then
-          ASSET="${ASSET}.tar.gz"
-        else
-          ASSET="${ASSET}.zip"
-        fi
-
-        DOWNLOAD_URL="https://github.com/AltimateAI/altimate-code/releases/download/${VERSION}/${ASSET}"
-        echo "Downloading altimate-code ${VERSION} from ${DOWNLOAD_URL}"
-
-        mkdir -p ~/.altimate-code/bin
-        cd /tmp
-        if curl -fsSL -o "altimate-code-archive" "$DOWNLOAD_URL"; then
-          if [ "$OS" = "linux" ]; then
-            tar xzf altimate-code-archive -C ~/.altimate-code/bin/
-          else
-            unzip -o altimate-code-archive -d ~/.altimate-code/bin/
-          fi
-          chmod +x ~/.altimate-code/bin/altimate-code
-          rm -f altimate-code-archive
-
-          # Verify installation
-          if [ -x "$HOME/.altimate-code/bin/altimate-code" ]; then
-            echo "altimate-code installed successfully"
-            "$HOME/.altimate-code/bin/altimate-code" --version 2>/dev/null || true
-          else
-            echo "::warning::altimate-code binary not found after extraction"
-            ls -la "$HOME/.altimate-code/bin/" || true
-          fi
-        else
-          echo "::warning::Failed to download altimate-code ${VERSION} — falling back to regex rules"
-        fi
-
-    - name: Add altimate-code to PATH
-      shell: bash
-      run: |
-        echo "$HOME/.altimate-code/bin" >> $GITHUB_PATH
-        # Also verify check command is available
+        # Verify
         if command -v altimate-code >/dev/null 2>&1; then
-          echo "altimate-code is on PATH"
+          echo "altimate-code $(altimate-code --version 2>/dev/null || echo 'installed')"
+          altimate-code check --help >/dev/null 2>&1 && echo "check command: available" || echo "check command: not available"
+        else
+          echo "::warning::altimate-code not found on PATH after install"
         fi
 
     - name: Setup Node.js
