@@ -93,69 +93,19 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Get altimate-code version
-      id: version
-      shell: bash
-      run: |
-        VERSION=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/AltimateAI/altimate-code/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
-        echo "version=${VERSION:-latest}" >> $GITHUB_OUTPUT
-
-    - name: Cache altimate-code
-      id: cache
-      uses: actions/cache@v4
-      with:
-        path: ~/.altimate-code/bin
-        key: altimate-code-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
-
-    - name: Install altimate-code
-      if: steps.cache.outputs.cache-hit != 'true'
-      shell: bash
-      run: |
-        # Download binary directly from GitHub releases
-        VERSION="${{ steps.version.outputs.version }}"
-        ARCH=$(uname -m)
-        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-
-        # Map architecture names
-        case "$ARCH" in
-          x86_64) ARCH="x64" ;;
-          aarch64|arm64) ARCH="arm64" ;;
-        esac
-
-        ASSET="altimate-code-${OS}-${ARCH}"
-        if [ "$OS" = "linux" ]; then
-          ASSET="${ASSET}.tar.gz"
-        else
-          ASSET="${ASSET}.zip"
-        fi
-
-        DOWNLOAD_URL="https://github.com/AltimateAI/altimate-code/releases/download/${VERSION}/${ASSET}"
-        echo "Downloading altimate-code ${VERSION} from ${DOWNLOAD_URL}"
-
-        mkdir -p ~/.altimate-code/bin
-        cd /tmp
-        if curl -fsSL -o "altimate-code-archive" "$DOWNLOAD_URL"; then
-          if [ "$OS" = "linux" ]; then
-            tar xzf altimate-code-archive -C ~/.altimate-code/bin/ 2>/dev/null || true
-          else
-            unzip -o altimate-code-archive -d ~/.altimate-code/bin/ 2>/dev/null || true
-          fi
-          chmod +x ~/.altimate-code/bin/altimate-code 2>/dev/null || true
-          rm -f altimate-code-archive
-          echo "altimate-code installed successfully"
-        else
-          echo "::warning::Failed to download altimate-code binary — some features may be limited"
-        fi
-
-    - name: Add altimate-code to PATH
-      shell: bash
-      run: |
-        [ -d "$HOME/.altimate-code/bin" ] && echo "$HOME/.altimate-code/bin" >> $GITHUB_PATH || true
-
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: "22"
+
+    - name: Install altimate-code
+      shell: bash
+      run: |
+        if npm install -g altimate-code 2>/dev/null; then
+          echo "altimate-code $(altimate-code --version 2>/dev/null || echo 'installed') via npm"
+        else
+          echo "::warning::Failed to install altimate-code via npm — some features may be limited"
+        fi
 
     - name: Validate model input
       shell: bash
