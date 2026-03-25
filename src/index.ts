@@ -167,16 +167,18 @@ async function runAnalyses(
   prContext: Awaited<ReturnType<typeof getPRContext>>,
   config: ActionConfig,
 ): Promise<[SQLIssue[], ImpactResult | null, CostEstimate[]]> {
-  // Detect v2 config — if present and CLI available, use `altimate-code check`
+  // Always try `altimate-code check` first (deterministic, no LLM).
+  // Falls back to regex rules if CLI unavailable.
   const fileConfig = (config as ActionConfig & { fileConfig?: AltimateConfig }).fileConfig;
-  const isV2 = fileConfig && (fileConfig as unknown as { version: number }).version === 2;
+  const v2Config =
+    fileConfig && (fileConfig as unknown as { version: number }).version === 2
+      ? (fileConfig as unknown as AltimateConfigV2)
+      : null;
 
   const promises: [Promise<SQLIssue[]>, Promise<ImpactResult | null>, Promise<CostEstimate[]>] = [
-    // SQL review
+    // SQL review — try CLI check first, fall back to regex
     config.sqlReview && (config.mode === "full" || config.mode === "static" || config.mode === "ai")
-      ? isV2
-        ? runV2CheckAnalysis(sqlFiles, fileConfig as unknown as AltimateConfigV2)
-        : analyzeSQLFiles(sqlFiles, config)
+      ? runAnalysisWithCLIFallback(sqlFiles, config, v2Config)
       : Promise.resolve([]),
 
     // Impact analysis
@@ -245,6 +247,31 @@ async function runAnalyses(
  * checks are collected and sent as a single CLI invocation. Falls back to
  * the standard `analyzeSQLFiles` path if the CLI is not available.
  */
+/**
+ * Try `altimate-code check` first (real AST-based analysis), fall back to
+ * regex rules if the CLI is unavailable.
+ */
+async function runAnalysisWithCLIFallback(
+  sqlFiles: ReturnType<typeof getChangedSQLFiles>,
+  config: ActionConfig,
+  v2Config: AltimateConfigV2 | null,
+): Promise<SQLIssue[]> {
+  // Try CLI check
+  const cliReady = await isCheckCommandAvailable();
+  if (cliReady) {
+    core.info("altimate-code check command available — using AST-based analysis");
+    if (v2Config) {
+      return runV2CheckAnalysis(sqlFiles, v2Config);
+    }
+    // No v2 config — use default checks (lint + safety)
+    return runCheckCommand(sqlFiles, { checks: ["lint", "safety"] });
+  }
+
+  // CLI not available — fall back to regex
+  core.info("altimate-code check not available — using regex rule engine");
+  return analyzeSQLFiles(sqlFiles, config);
+}
+
 async function runV2CheckAnalysis(
   sqlFiles: ReturnType<typeof getChangedSQLFiles>,
   v2Config: AltimateConfigV2,

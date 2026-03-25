@@ -136,21 +136,33 @@ runs:
         cd /tmp
         if curl -fsSL -o "altimate-code-archive" "$DOWNLOAD_URL"; then
           if [ "$OS" = "linux" ]; then
-            tar xzf altimate-code-archive -C ~/.altimate-code/bin/ 2>/dev/null || true
+            tar xzf altimate-code-archive -C ~/.altimate-code/bin/
           else
-            unzip -o altimate-code-archive -d ~/.altimate-code/bin/ 2>/dev/null || true
+            unzip -o altimate-code-archive -d ~/.altimate-code/bin/
           fi
-          chmod +x ~/.altimate-code/bin/altimate-code 2>/dev/null || true
+          chmod +x ~/.altimate-code/bin/altimate-code
           rm -f altimate-code-archive
-          echo "altimate-code installed successfully"
+
+          # Verify installation
+          if [ -x "$HOME/.altimate-code/bin/altimate-code" ]; then
+            echo "altimate-code installed successfully"
+            "$HOME/.altimate-code/bin/altimate-code" --version 2>/dev/null || true
+          else
+            echo "::warning::altimate-code binary not found after extraction"
+            ls -la "$HOME/.altimate-code/bin/" || true
+          fi
         else
-          echo "::warning::Failed to download altimate-code binary — some features may be limited"
+          echo "::warning::Failed to download altimate-code ${VERSION} — falling back to regex rules"
         fi
 
     - name: Add altimate-code to PATH
       shell: bash
       run: |
-        [ -d "$HOME/.altimate-code/bin" ] && echo "$HOME/.altimate-code/bin" >> $GITHUB_PATH || true
+        echo "$HOME/.altimate-code/bin" >> $GITHUB_PATH
+        # Also verify check command is available
+        if command -v altimate-code >/dev/null 2>&1; then
+          echo "altimate-code is on PATH"
+        fi
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
