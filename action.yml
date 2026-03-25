@@ -97,8 +97,17 @@ runs:
       id: version
       shell: bash
       run: |
-        VERSION=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/AltimateAI/altimate-code/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
-        echo "version=${VERSION:-latest}" >> $GITHUB_OUTPUT
+        # Try with token first, fall back to unauthenticated
+        VERSION=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/AltimateAI/altimate-code/releases/latest 2>/dev/null | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+        if [ -z "$VERSION" ]; then
+          VERSION=$(curl -sf https://api.github.com/repos/AltimateAI/altimate-code/releases/latest 2>/dev/null | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+        fi
+        if [ -z "$VERSION" ]; then
+          echo "::warning::Could not determine altimate-code version — using v0.5.10 as fallback"
+          VERSION="v0.5.10"
+        fi
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Resolved altimate-code version: ${VERSION}"
 
     - name: Cache altimate-code
       id: cache
