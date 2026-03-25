@@ -96,10 +96,7 @@ export async function runAction(
   }
 
   // The action entrypoint is the built dist/index.js
-  const entrypoint = resolve(
-    import.meta.dir,
-    "../../../dist/index.js",
-  );
+  const entrypoint = resolve(import.meta.dir, "../../../dist/index.js");
 
   return new Promise<RunResult>((resolveResult, reject) => {
     const child = spawn("node", [entrypoint], {

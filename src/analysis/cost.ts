@@ -20,15 +20,11 @@ export async function estimateCost(
   }
 
   if (!config.warehouseType) {
-    core.warning(
-      "Cost estimation enabled but no warehouse_type configured — skipping",
-    );
+    core.warning("Cost estimation enabled but no warehouse_type configured — skipping");
     return [];
   }
 
-  core.info(
-    `Estimating cost for ${files.length} file(s) on ${config.warehouseType}`,
-  );
+  core.info(`Estimating cost for ${files.length} file(s) on ${config.warehouseType}`);
 
   const estimates: CostEstimate[] = [];
 
@@ -83,19 +79,16 @@ async function estimateOneFile(
     env.WAREHOUSE_CONNECTION = JSON.stringify(config.warehouseConnection);
   }
 
-  const result = await runCLI(
-    ["run", "--format", "json", "--prompt", prompt],
-    { parseJson: true, env, timeout: 60_000 },
-  );
+  const result = await runCLI(["run", "--format", "json", "--prompt", prompt], {
+    parseJson: true,
+    env,
+    timeout: 60_000,
+  });
 
   return parseCostOutput(file.filename, result.json ?? result.stdout);
 }
 
-function buildCostPrompt(
-  filename: string,
-  content: string,
-  config: ActionConfig,
-): string {
+function buildCostPrompt(filename: string, content: string, config: ActionConfig): string {
   const lines: string[] = [];
 
   lines.push(
@@ -105,9 +98,7 @@ function buildCostPrompt(
     "Return a JSON object with: costDelta (number, USD/month), " +
       "explanation (string describing the cost factors).",
   );
-  lines.push(
-    "If you cannot estimate, return costDelta: 0 with an explanation of why.",
-  );
+  lines.push("If you cannot estimate, return costDelta: 0 with an explanation of why.");
   lines.push(`File: ${filename}`);
   lines.push("```sql");
   lines.push(content.replace(/```/g, "\\`\\`\\`"));
@@ -116,10 +107,7 @@ function buildCostPrompt(
   return lines.join("\n");
 }
 
-function parseCostOutput(
-  filename: string,
-  output: unknown,
-): CostEstimate | undefined {
+function parseCostOutput(filename: string, output: unknown): CostEstimate | undefined {
   if (!output) return undefined;
 
   if (typeof output === "object" && output !== null) {
@@ -135,12 +123,9 @@ function parseCostOutput(
       file: filename,
       costDelta,
       currency: "USD",
-      explanation:
-        typeof obj.explanation === "string" ? obj.explanation : undefined,
-      costBefore:
-        typeof obj.costBefore === "number" ? obj.costBefore : undefined,
-      costAfter:
-        typeof obj.costAfter === "number" ? obj.costAfter : undefined,
+      explanation: typeof obj.explanation === "string" ? obj.explanation : undefined,
+      costBefore: typeof obj.costBefore === "number" ? obj.costBefore : undefined,
+      costAfter: typeof obj.costAfter === "number" ? obj.costAfter : undefined,
     };
   }
 

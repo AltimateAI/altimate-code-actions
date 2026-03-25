@@ -1,10 +1,10 @@
 import { describe, it, expect } from "bun:test";
-import { buildCheckOptionsFromV2 } from "../../src/config/schema.js";
-import type {
-  AltimateConfigV2,
-  LintCheckConfig,
-  PolicyCheckConfig,
-  PIICheckConfig,
+import {
+  buildCheckOptionsFromV2,
+  type AltimateConfigV2,
+  type LintCheckConfig,
+  type PolicyCheckConfig,
+  type PIICheckConfig,
 } from "../../src/config/schema.js";
 import { Severity } from "../../src/analysis/types.js";
 
@@ -112,7 +112,13 @@ describe("buildCheckOptionsFromV2", () => {
     });
     const options = buildCheckOptionsFromV2(config);
     expect(options.checks).toEqual([
-      "lint", "validate", "safety", "policy", "pii", "semantic", "grade",
+      "lint",
+      "validate",
+      "safety",
+      "policy",
+      "pii",
+      "semantic",
+      "grade",
     ]);
   });
 
@@ -298,9 +304,7 @@ describe("V2 config type structure", () => {
   it("inline policy is a generic Record", () => {
     const config = makeV2Config({
       policy: {
-        rules: [
-          { name: "no_drop", pattern: "\\bDROP\\b", message: "no drop", severity: "error" },
-        ],
+        rules: [{ name: "no_drop", pattern: "\\bDROP\\b", message: "no drop", severity: "error" }],
       },
     });
     expect(config.policy).toBeDefined();

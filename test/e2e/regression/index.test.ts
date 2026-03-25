@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeAll } from "bun:test";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { checkCLIAvailable } from "../helpers/cli-runner.js";
 import { parseDiff, isSQLFile } from "../../../src/util/diff-parser.js";
 
 const FIXTURES = resolve(import.meta.dir, "../fixtures");
 
-let cliAvailable = false;
+let _cliAvailable = false;
 
 beforeAll(async () => {
-  cliAvailable = await checkCLIAvailable();
+  _cliAvailable = await checkCLIAvailable();
 });
 
 describe("Regression Tests", () => {
@@ -31,7 +31,11 @@ index 0000000..abc1234
 --- /dev/null
 +++ b/models/unicode.sql
 @@ -0,0 +1,8 @@
-+${unicodeSQL.split("\n").filter(Boolean).map((l) => l).join("\n+")}
++${unicodeSQL
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => l)
+      .join("\n+")}
 `;
 
     const parsed = parseDiff(diff);
@@ -53,7 +57,10 @@ index 0000000..abc1234
     expect(largeSql.length).toBeGreaterThan(200_000);
 
     // Creating a diff-like structure
-    const diffLines = largeSql.split("\n").map((l) => `+${l}`).join("\n");
+    const diffLines = largeSql
+      .split("\n")
+      .map((l) => `+${l}`)
+      .join("\n");
     const diff = `diff --git a/models/large.sql b/models/large.sql
 new file mode 100644
 index 0000000..abc1234

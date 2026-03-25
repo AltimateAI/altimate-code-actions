@@ -73,7 +73,7 @@ function detectAntiPatterns(
 
   // Cartesian join: FROM with comma-separated tables and no JOIN keyword
   const noComments = sql.replace(/--[^\n]*/g, "");
-  const normalized = noComments.replace(/\s+/g, " ").trim().toUpperCase();
+  const _normalized = noComments.replace(/\s+/g, " ").trim().toUpperCase();
 
   if (
     /\bFROM\s+\w+\s+\w+\s*,\s*\w+/i.test(noComments) &&
@@ -87,9 +87,7 @@ function detectAntiPatterns(
   }
 
   // Non-deterministic: CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), GETDATE()
-  if (
-    /\b(CURRENT_DATE|CURRENT_TIMESTAMP|NOW\s*\(\)|GETDATE\s*\(\))\b/i.test(noComments)
-  ) {
+  if (/\b(CURRENT_DATE|CURRENT_TIMESTAMP|NOW\s*\(\)|GETDATE\s*\(\))\b/i.test(noComments)) {
     issues.push({
       type: "non_deterministic",
       severity: "warning",
@@ -126,10 +124,7 @@ function detectAntiPatterns(
   }
 
   // Missing partition filter (heuristic: partitioned_by in table name, no date filter)
-  if (
-    /partitioned/i.test(noComments) &&
-    !/\bWHERE\b[^;]*(date|partition|dt)\b/i.test(noComments)
-  ) {
+  if (/partitioned/i.test(noComments) && !/\bWHERE\b[^;]*(date|partition|dt)\b/i.test(noComments)) {
     issues.push({
       type: "missing_partition_filter",
       severity: "error",
@@ -138,7 +133,11 @@ function detectAntiPatterns(
   }
 
   // Function on indexed column in WHERE
-  if (/\bWHERE\b[^;]*\b(UPPER|LOWER|TRIM|CAST|CONVERT|SUBSTRING|LEFT|RIGHT|YEAR|MONTH|DAY|DATE_TRUNC|COALESCE)\s*\(/i.test(noComments)) {
+  if (
+    /\bWHERE\b[^;]*\b(UPPER|LOWER|TRIM|CAST|CONVERT|SUBSTRING|LEFT|RIGHT|YEAR|MONTH|DAY|DATE_TRUNC|COALESCE)\s*\(/i.test(
+      noComments,
+    )
+  ) {
     issues.push({
       type: "function_on_indexed_column",
       severity: "warning",
@@ -151,7 +150,8 @@ function detectAntiPatterns(
     issues.push({
       type: "not_in_with_nulls",
       severity: "warning",
-      message: "NOT IN with subquery can return zero rows if any NULL exists in the subquery result",
+      message:
+        "NOT IN with subquery can return zero rows if any NULL exists in the subquery result",
     });
   }
 
@@ -193,9 +193,7 @@ beforeAll(async () => {
 
 describe("SQL Anti-Pattern Detection", () => {
   it("detects SELECT * anti-pattern", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "select-star.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "select-star.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -206,9 +204,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects cartesian join", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "cartesian-join.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "cartesian-join.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -218,9 +214,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects non-deterministic query", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "non-deterministic.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "non-deterministic.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -230,9 +224,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects correlated subquery", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "correlated-subquery.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "correlated-subquery.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -242,9 +234,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects missing partition filter", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "missing-partition.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "missing-partition.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -254,9 +244,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects OR in join condition", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "or-in-join.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "or-in-join.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -266,9 +254,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects implicit type cast", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "implicit-type-cast.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "implicit-type-cast.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -278,9 +264,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects function on indexed column", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "function-on-indexed-column.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "function-on-indexed-column.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -290,9 +274,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects NOT IN with nulls", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "not-in-with-nulls.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "not-in-with-nulls.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -302,9 +284,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects DISTINCT masking bad join", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "distinct-instead-of-join-fix.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "distinct-instead-of-join-fix.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -314,9 +294,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects COUNT(*) > 0 for existence", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "count-star-for-existence.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "count-star-for-existence.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -326,9 +304,7 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("detects DELETE without LIMIT", async () => {
-    const result = await analyzeFile(
-      resolve(ANTI_PATTERNS, "no-limit-on-delete.sql"),
-    );
+    const result = await analyzeFile(resolve(ANTI_PATTERNS, "no-limit-on-delete.sql"));
     expect(result.issues.length).toBeGreaterThan(0);
     expect(result.issues).toContainEqual(
       expect.objectContaining({
@@ -338,16 +314,12 @@ describe("SQL Anti-Pattern Detection", () => {
   });
 
   it("passes clean query with no issues", async () => {
-    const result = await analyzeFile(
-      resolve(CLEAN_SQL, "well-formed-query.sql"),
-    );
+    const result = await analyzeFile(resolve(CLEAN_SQL, "well-formed-query.sql"));
     expect(result.issues).toHaveLength(0);
   });
 
   it("passes clean aggregation query with no issues", async () => {
-    const result = await analyzeFile(
-      resolve(CLEAN_SQL, "aggregation-query.sql"),
-    );
+    const result = await analyzeFile(resolve(CLEAN_SQL, "aggregation-query.sql"));
     expect(result.issues).toHaveLength(0);
   });
 

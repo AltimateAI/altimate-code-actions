@@ -1,6 +1,5 @@
 import { describe, it, expect } from "bun:test";
 import { parseCommand } from "../../src/interactive/commands.js";
-import type { ParsedCommand } from "../../src/interactive/commands.js";
 
 const DEFAULT_MENTIONS = ["/altimate", "/oc", "@altimate"];
 
@@ -86,9 +85,7 @@ describe("parseCommand", () => {
     });
 
     it("returns null when mention is in the middle of comment", () => {
-      expect(
-        parseCommand("Hey can you run /altimate review?", DEFAULT_MENTIONS),
-      ).toBeNull();
+      expect(parseCommand("Hey can you run /altimate review?", DEFAULT_MENTIONS)).toBeNull();
     });
 
     it("returns null with empty mentions list", () => {
@@ -131,10 +128,7 @@ describe("parseCommand", () => {
     });
 
     it("handles extra whitespace between tokens", () => {
-      const result = parseCommand(
-        "/altimate   review   models/foo.sql",
-        DEFAULT_MENTIONS,
-      );
+      const result = parseCommand("/altimate   review   models/foo.sql", DEFAULT_MENTIONS);
       expect(result).not.toBeNull();
       expect(result!.command).toBe("review");
       expect(result!.file).toBe("models/foo.sql");

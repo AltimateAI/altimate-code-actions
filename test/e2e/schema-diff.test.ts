@@ -40,16 +40,17 @@ function parseCreateTable(sql: string): SchemaColumn[] {
   if (!match) return columns;
 
   const body = match[1];
-  const lines = body.split(",").map((l) => l.trim()).filter(Boolean);
+  const lines = body
+    .split(",")
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   for (const line of lines) {
     // Skip constraints (PRIMARY KEY, REFERENCES, etc. as standalone lines)
     if (/^\s*(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)\b/i.test(line)) continue;
 
     // Parse: name TYPE [NOT NULL] [DEFAULT ...]
-    const colMatch = line.match(
-      /^\s*(\w+)\s+([\w(),.]+(?:\s*\([^)]*\))?)\s*(.*)/i,
-    );
+    const colMatch = line.match(/^\s*(\w+)\s+([\w(),.]+(?:\s*\([^)]*\))?)\s*(.*)/i);
     if (!colMatch) continue;
 
     const name = colMatch[1].toLowerCase();
@@ -160,10 +161,7 @@ function diffSchemas(
 
 describe("Schema Breaking Change Detection", () => {
   it("detects column removal", () => {
-    const result = diffSchemas(
-      resolve(BEFORE, "orders.sql"),
-      resolve(AFTER, "orders.sql"),
-    );
+    const result = diffSchemas(resolve(BEFORE, "orders.sql"), resolve(AFTER, "orders.sql"));
 
     expect(result.breakingChanges.length).toBeGreaterThan(0);
     expect(result.changes).toContainEqual(
@@ -175,10 +173,7 @@ describe("Schema Breaking Change Detection", () => {
   });
 
   it("detects column rename", () => {
-    const result = diffSchemas(
-      resolve(BEFORE, "users.sql"),
-      resolve(AFTER, "users.sql"),
-    );
+    const result = diffSchemas(resolve(BEFORE, "users.sql"), resolve(AFTER, "users.sql"));
 
     expect(result.changes).toContainEqual(
       expect.objectContaining({
@@ -191,10 +186,7 @@ describe("Schema Breaking Change Detection", () => {
   });
 
   it("detects type change", () => {
-    const result = diffSchemas(
-      resolve(BEFORE, "orders.sql"),
-      resolve(AFTER, "orders.sql"),
-    );
+    const result = diffSchemas(resolve(BEFORE, "orders.sql"), resolve(AFTER, "orders.sql"));
 
     const typeChanges = result.changes.filter((c) => c.type === "type_changed");
     // The orders fixture has total_amount type change
@@ -204,10 +196,7 @@ describe("Schema Breaking Change Detection", () => {
   });
 
   it("allows non-breaking column addition", () => {
-    const result = diffSchemas(
-      resolve(BEFORE, "orders.sql"),
-      resolve(AFTER, "orders.sql"),
-    );
+    const result = diffSchemas(resolve(BEFORE, "orders.sql"), resolve(AFTER, "orders.sql"));
 
     // Check for any added columns that are NOT breaking
     const addedCols = result.changes.filter((c) => c.type === "column_added");
@@ -217,10 +206,7 @@ describe("Schema Breaking Change Detection", () => {
   });
 
   it("classifies breaking vs non-breaking changes correctly", () => {
-    const result = diffSchemas(
-      resolve(BEFORE, "orders.sql"),
-      resolve(AFTER, "orders.sql"),
-    );
+    const result = diffSchemas(resolve(BEFORE, "orders.sql"), resolve(AFTER, "orders.sql"));
 
     // Column additions are non-breaking
     for (const change of result.changes) {
@@ -234,10 +220,7 @@ describe("Schema Breaking Change Detection", () => {
   });
 
   it("reports correct column names", () => {
-    const result = diffSchemas(
-      resolve(BEFORE, "users.sql"),
-      resolve(AFTER, "users.sql"),
-    );
+    const result = diffSchemas(resolve(BEFORE, "users.sql"), resolve(AFTER, "users.sql"));
 
     // Check that column names are lowercase strings
     for (const change of result.changes) {
@@ -248,10 +231,7 @@ describe("Schema Breaking Change Detection", () => {
 
   it("handles identical schemas (no changes)", () => {
     // Compare a file against itself
-    const result = diffSchemas(
-      resolve(BEFORE, "users.sql"),
-      resolve(BEFORE, "users.sql"),
-    );
+    const result = diffSchemas(resolve(BEFORE, "users.sql"), resolve(BEFORE, "users.sql"));
 
     expect(result.changes).toHaveLength(0);
     expect(result.breakingChanges).toHaveLength(0);

@@ -1,10 +1,5 @@
-import { Severity, SEVERITY_WEIGHT } from "./types.js";
-import type { SQLIssue } from "./types.js";
-import type {
-  AltimateConfig,
-  RuleConfig,
-  CustomPattern,
-} from "../config/schema.js";
+import { Severity, SEVERITY_WEIGHT, type SQLIssue } from "./types.js";
+import type { AltimateConfig, RuleConfig, CustomPattern } from "../config/schema.js";
 
 /** Rule categories for grouping related checks. */
 export type RuleCategory = "correctness" | "performance" | "style" | "security";
@@ -108,9 +103,7 @@ function detectMissingPartition(sql: string, file: string): SQLIssue[] {
     !fullUpper.includes("PARTITION BY")
   ) {
     for (let i = 0; i < lines.length; i++) {
-      if (
-        /\b(ROW_NUMBER|RANK|DENSE_RANK|NTILE|LAG|LEAD)\s*\(/i.test(lines[i])
-      ) {
+      if (/\b(ROW_NUMBER|RANK|DENSE_RANK|NTILE|LAG|LEAD)\s*\(/i.test(lines[i])) {
         issues.push({
           file,
           line: i + 1,
@@ -147,8 +140,7 @@ function detectCorrelatedSubquery(sql: string, file: string): SQLIssue[] {
 
   // Simple heuristic: subquery in WHERE/SELECT that references outer alias
   // Look for WHERE ... (SELECT ... WHERE outer.col pattern
-  const subqueryInWhere =
-    /\bWHERE\s+.*\(\s*SELECT\b/i;
+  const subqueryInWhere = /\bWHERE\s+.*\(\s*SELECT\b/i;
 
   for (let i = 0; i < lines.length; i++) {
     if (subqueryInWhere.test(lines[i])) {
@@ -181,8 +173,7 @@ function detectImplicitTypeCast(sql: string, file: string): SQLIssue[] {
       issues.push({
         file,
         line: i + 1,
-        message:
-          "Possible implicit type cast — comparing a column to a quoted numeric literal",
+        message: "Possible implicit type cast — comparing a column to a quoted numeric literal",
         severity: Severity.Info,
         rule: "implicit_type_cast",
         suggestion:
@@ -216,8 +207,7 @@ function detectMissingGroupBy(sql: string, file: string): SQLIssue[] {
   if (/\bOVER\s*\(/i.test(sql)) return issues;
 
   // If query has aggregate functions but no GROUP BY
-  const hasAggregate =
-    /\b(SUM|COUNT|AVG|MIN|MAX)\s*\(/i.test(sql);
+  const hasAggregate = /\b(SUM|COUNT|AVG|MIN|MAX)\s*\(/i.test(sql);
   const hasGroupBy = fullUpper.includes("GROUP BY");
 
   if (hasAggregate && !hasGroupBy) {
@@ -226,9 +216,7 @@ function detectMissingGroupBy(sql: string, file: string): SQLIssue[] {
     const selectMatch = sql.match(/\bSELECT\b([\s\S]*?)\bFROM\b/i);
     if (selectMatch) {
       const selectClause = selectMatch[1];
-      const hasNonAggColumn = /\b(?!SUM|COUNT|AVG|MIN|MAX)\w+\s*[,\s]/i.test(
-        selectClause,
-      );
+      const hasNonAggColumn = /\b(?!SUM|COUNT|AVG|MIN|MAX)\w+\s*[,\s]/i.test(selectClause);
       if (hasNonAggColumn) {
         for (let i = 0; i < lines.length; i++) {
           if (/\bSELECT\b/i.test(lines[i])) {
@@ -308,8 +296,7 @@ function detectNestedSubquery(sql: string, file: string): SQLIssue[] {
       issues.push({
         file,
         line: i + 1,
-        message:
-          "Deeply nested subquery (3+ levels) — consider using CTEs for readability",
+        message: "Deeply nested subquery (3+ levels) — consider using CTEs for readability",
         severity: Severity.Warning,
         rule: "nested_subquery",
         suggestion:
@@ -326,8 +313,7 @@ function detectMissingWhereClause(sql: string, file: string): SQLIssue[] {
   const lines = sql.split("\n");
 
   // Detect UPDATE/DELETE without WHERE
-  const dangerousPattern =
-    /\b(UPDATE\s+\w+\s+SET|DELETE\s+FROM\s+\w+)\b/i;
+  const dangerousPattern = /\b(UPDATE\s+\w+\s+SET|DELETE\s+FROM\s+\w+)\b/i;
 
   for (let i = 0; i < lines.length; i++) {
     if (dangerousPattern.test(lines[i])) {

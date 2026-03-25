@@ -1,12 +1,10 @@
 import * as core from "@actions/core";
 import { runCLI } from "../util/cli.js";
 import { getFileContent, getHeadSHA } from "../util/octokit.js";
-import type { ChangedFile, SQLIssue, ActionConfig } from "./types.js";
-import { Severity } from "./types.js";
+import { Severity, type ChangedFile, type SQLIssue, type ActionConfig } from "./types.js";
 import { createRegistry } from "./rules.js";
 import { loadConfig } from "../config/loader.js";
-import { isCheckCommandAvailable, runCheckCommand } from "./cli-check.js";
-import type { CheckCommandOptions } from "./cli-check.js";
+import { isCheckCommandAvailable, runCheckCommand, type CheckCommandOptions } from "./cli-check.js";
 
 /**
  * Run SQL quality analysis on the given files.
@@ -90,9 +88,7 @@ async function analyzeWithRuleEngine(
  * Pure regex-based rule engine fallback. Used when the `altimate-code` CLI
  * is not installed or does not support the `check` subcommand.
  */
-async function analyzeWithRegexRules(
-  files: ChangedFile[],
-): Promise<SQLIssue[]> {
+async function analyzeWithRegexRules(files: ChangedFile[]): Promise<SQLIssue[]> {
   const altimateConfig = loadConfig(".altimate.yml");
   const registry = createRegistry(altimateConfig);
   const allIssues: SQLIssue[] = [];
@@ -116,10 +112,7 @@ async function analyzeWithRegexRules(
   return allIssues;
 }
 
-async function analyzeOneFile(
-  file: ChangedFile,
-  config: ActionConfig,
-): Promise<SQLIssue[]> {
+async function analyzeOneFile(file: ChangedFile, config: ActionConfig): Promise<SQLIssue[]> {
   core.debug(`Analyzing SQL file: ${file.filename}`);
 
   let sqlContent: string;
@@ -136,19 +129,14 @@ async function analyzeOneFile(
 
   const prompt = buildAnalysisPrompt(file.filename, sqlContent, config);
 
-  const result = await runCLI(
-    ["run", "--format", "json", "--prompt", prompt],
-    {
-      parseJson: true,
-      env: { MODEL: config.model },
-      timeout: 60_000,
-    },
-  );
+  const result = await runCLI(["run", "--format", "json", "--prompt", prompt], {
+    parseJson: true,
+    env: { MODEL: config.model },
+    timeout: 60_000,
+  });
 
   if (result.exitCode !== 0) {
-    core.warning(
-      `CLI returned exit code ${result.exitCode} for ${file.filename}`,
-    );
+    core.warning(`CLI returned exit code ${result.exitCode} for ${file.filename}`);
     // Try to parse partial output anyway
   }
 
@@ -164,11 +152,7 @@ function sanitizeSQLForPrompt(sql: string): string {
   return sql.replace(/```/g, "\\`\\`\\`");
 }
 
-function buildAnalysisPrompt(
-  filename: string,
-  content: string,
-  config: ActionConfig,
-): string {
+function buildAnalysisPrompt(filename: string, content: string, config: ActionConfig): string {
   const checks: string[] = [];
 
   // System instruction boundary
@@ -178,9 +162,7 @@ function buildAnalysisPrompt(
   );
   checks.push("");
 
-  checks.push(
-    "Analyze the following SQL for quality issues, anti-patterns, and potential bugs.",
-  );
+  checks.push("Analyze the following SQL for quality issues, anti-patterns, and potential bugs.");
 
   if (config.piiCheck) {
     checks.push(
@@ -202,10 +184,7 @@ function buildAnalysisPrompt(
   return checks.join("\n");
 }
 
-function parseAnalysisOutput(
-  filename: string,
-  output: unknown,
-): SQLIssue[] {
+function parseAnalysisOutput(filename: string, output: unknown): SQLIssue[] {
   if (!output) return [];
 
   // If the CLI returned a JSON array directly
@@ -240,10 +219,7 @@ function parseAnalysisOutput(
   return [];
 }
 
-function normalizeIssue(
-  defaultFile: string,
-  raw: unknown,
-): SQLIssue {
+function normalizeIssue(defaultFile: string, raw: unknown): SQLIssue {
   if (typeof raw !== "object" || raw === null) {
     return {
       file: defaultFile,

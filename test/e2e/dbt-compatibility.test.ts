@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeAll } from "bun:test";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { checkCLIAvailable, runCLI } from "./helpers/cli-runner.js";
+import { checkCLIAvailable } from "./helpers/cli-runner.js";
 
 const FIXTURES = resolve(import.meta.dir, "fixtures");
 const DBT_VERSIONS_DIR = resolve(FIXTURES, "dbt-versions");
 const JAFFLE_SHOP = resolve(FIXTURES, "jaffle-shop");
 
-let cliAvailable = false;
+let _cliAvailable = false;
 
 beforeAll(async () => {
-  cliAvailable = await checkCLIAvailable();
+  _cliAvailable = await checkCLIAvailable();
 });
 
 /** Read and parse a YAML file (minimal parser for dbt_project.yml). */
@@ -64,7 +64,7 @@ describe.each(["v1.7", "v1.8", "v1.9"])("dbt %s compatibility", (version) => {
     expect(config.name).toBeDefined();
     expect(typeof config.name).toBe("string");
     expect(config["config-version"]).toBe("2");
-    expect((config.name as string)).toContain(versionNum.replace(".", ""));
+    expect(config.name as string).toContain(versionNum.replace(".", ""));
   });
 
   it("has model SQL files", () => {
@@ -93,9 +93,7 @@ describe.each(["v1.7", "v1.8", "v1.9"])("dbt %s compatibility", (version) => {
 
   it("models use Jinja ref/source macros", () => {
     const sqlFiles = findSQLFiles(resolve(versionDir, "models"));
-    const hasJinja = sqlFiles.some((f) =>
-      containsJinja(readFileSync(f, "utf-8")),
-    );
+    const hasJinja = sqlFiles.some((f) => containsJinja(readFileSync(f, "utf-8")));
 
     expect(hasJinja).toBe(true);
   });

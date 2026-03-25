@@ -1,6 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { parseCheckOutput } from "../../src/analysis/cli-check.js";
-import type { CheckOutput } from "../../src/analysis/cli-check.js";
+import { parseCheckOutput, type CheckOutput } from "../../src/analysis/cli-check.js";
 import { Severity } from "../../src/analysis/types.js";
 
 function makeCheckOutput(overrides?: Partial<CheckOutput>): CheckOutput {
@@ -148,13 +147,25 @@ describe("parseCheckOutput", () => {
         lint: {
           findings: [
             { file: "a.sql", line: 1, code: "L001", severity: "warning", message: "SELECT *" },
-            { file: "a.sql", line: 10, code: "L003", severity: "info", message: "ORDER BY ordinal" },
+            {
+              file: "a.sql",
+              line: 10,
+              code: "L003",
+              severity: "info",
+              message: "ORDER BY ordinal",
+            },
           ],
           warning_count: 1,
         },
         safety: {
           findings: [
-            { file: "b.sql", line: 5, rule: "injection", severity: "critical", message: "Injection risk" },
+            {
+              file: "b.sql",
+              line: 5,
+              rule: "injection",
+              severity: "critical",
+              message: "Injection risk",
+            },
           ],
           safe: false,
         },
@@ -307,7 +318,7 @@ describe("parseCheckOutput", () => {
     const findings = Array.from({ length: 1500 }, (_, i) => ({
       file: `models/model_${i}.sql`,
       line: i + 1,
-      code: `L${String(i % 26 + 1).padStart(3, "0")}`,
+      code: `L${String((i % 26) + 1).padStart(3, "0")}`,
       severity: "warning",
       message: `Issue ${i}`,
     }));
@@ -329,9 +340,7 @@ describe("parseCheckOutput", () => {
       checks_run: ["lint", "safety", "validate", "policy", "pii", "semantic", "grade"],
       results: {
         lint: {
-          findings: [
-            { file: "a.sql", code: "L001", severity: "warning", message: "SELECT *" },
-          ],
+          findings: [{ file: "a.sql", code: "L001", severity: "warning", message: "SELECT *" }],
         },
         safety: {
           findings: [
@@ -339,9 +348,7 @@ describe("parseCheckOutput", () => {
           ],
         },
         validate: {
-          findings: [
-            { file: "b.sql", severity: "error", message: "Parse error" },
-          ],
+          findings: [{ file: "b.sql", severity: "error", message: "Parse error" }],
         },
         policy: {
           findings: [
@@ -349,9 +356,7 @@ describe("parseCheckOutput", () => {
           ],
         },
         pii: {
-          findings: [
-            { file: "d.sql", rule: "email", severity: "warning", message: "PII found" },
-          ],
+          findings: [{ file: "d.sql", rule: "email", severity: "warning", message: "PII found" }],
         },
         semantic: {
           findings: [
@@ -359,9 +364,7 @@ describe("parseCheckOutput", () => {
           ],
         },
         grade: {
-          findings: [
-            { file: "f.sql", rule: "low_score", severity: "info", message: "Grade: D" },
-          ],
+          findings: [{ file: "f.sql", rule: "low_score", severity: "info", message: "Grade: D" }],
         },
       },
     });
@@ -427,9 +430,7 @@ describe("parseCheckOutput", () => {
       const output = makeCheckOutput({
         results: {
           [category]: {
-            findings: [
-              { file: "t.sql", rule, severity: "warning", message: "test" },
-            ],
+            findings: [{ file: "t.sql", rule, severity: "warning", message: "test" }],
           },
         },
       });

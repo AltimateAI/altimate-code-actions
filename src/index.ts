@@ -1,12 +1,12 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 
+import { loadConfig as loadFileConfig, mergeWithInputs } from "./config/loader.js";
 import {
-  loadConfig as loadFileConfig,
-  mergeWithInputs,
-} from "./config/loader.js";
-import type { AltimateConfig, AltimateConfigV2 } from "./config/schema.js";
-import { buildCheckOptionsFromV2 } from "./config/schema.js";
+  buildCheckOptionsFromV2,
+  type AltimateConfig,
+  type AltimateConfigV2,
+} from "./config/schema.js";
 import { isCheckCommandAvailable, runCheckCommand } from "./analysis/cli-check.js";
 import {
   getPRContext,
@@ -23,17 +23,18 @@ import { analyzeImpact } from "./analysis/impact.js";
 import { estimateCost, getTotalCostDelta } from "./analysis/cost.js";
 import { postReviewComment } from "./reporting/comment.js";
 import { runCLI } from "./util/cli.js";
-import type {
-  ActionConfig,
-  ReviewReport,
-  ReviewMode,
-  CommentMode,
-  FailOn,
-  SQLIssue,
-  ImpactResult,
-  CostEstimate,
+import {
+  Severity,
+  SEVERITY_WEIGHT,
+  type ActionConfig,
+  type ReviewReport,
+  type ReviewMode,
+  type CommentMode,
+  type FailOn,
+  type SQLIssue,
+  type ImpactResult,
+  type CostEstimate,
 } from "./analysis/types.js";
-import { Severity, SEVERITY_WEIGHT } from "./analysis/types.js";
 
 async function main(): Promise<void> {
   try {
@@ -61,7 +62,9 @@ async function main(): Promise<void> {
     const config = parseConfig();
     // Attach file config for downstream consumers
     (config as ActionConfig & { fileConfig?: AltimateConfig }).fileConfig = mergedFileConfig;
-    core.info(`Altimate Code Review — mode: ${config.mode}, model: ${config.model || "(none, static mode)"}`);
+    core.info(
+      `Altimate Code Review — mode: ${config.mode}, model: ${config.model || "(none, static mode)"}`,
+    );
 
     // Check for interactive mention events first
     if (config.interactive && isInteractiveMention(config.mentions)) {
@@ -70,8 +73,7 @@ async function main(): Promise<void> {
     }
 
     // FIX 7: Detect fork PRs
-    const isForkPR =
-      github.context.payload.pull_request?.head?.repo?.fork === true;
+    const isForkPR = github.context.payload.pull_request?.head?.repo?.fork === true;
     if (isForkPR) {
       core.warning(
         "Fork PR detected — posting comments requires write permissions. Results written to job summary only.",
@@ -95,14 +97,9 @@ async function main(): Promise<void> {
     }
 
     // Run analyses in parallel where possible
-    const [issues, impact, costEstimates] = await runAnalyses(
-      sqlFiles,
-      prContext,
-      config,
-    );
+    const [issues, impact, costEstimates] = await runAnalyses(sqlFiles, prContext, config);
 
-    const totalCostDelta =
-      costEstimates.length > 0 ? getTotalCostDelta(costEstimates) : undefined;
+    const totalCostDelta = costEstimates.length > 0 ? getTotalCostDelta(costEstimates) : undefined;
 
     const report: ReviewReport = {
       issues,
@@ -129,11 +126,7 @@ async function main(): Promise<void> {
           core.info("Fork PR — results written to job summary");
         }
       } else {
-        commentUrl = await postReviewComment(
-          prContext.prNumber,
-          report,
-          config.commentMode,
-        );
+        commentUrl = await postReviewComment(prContext.prNumber, report, config.commentMode);
       }
     } else {
       core.info("No findings — skipping PR comment");
@@ -144,9 +137,7 @@ async function main(): Promise<void> {
       issues_found: String(report.issuesFound),
       impact_score: report.impactScore !== undefined ? String(report.impactScore) : "",
       estimated_cost_delta:
-        report.estimatedCostDelta !== undefined
-          ? report.estimatedCostDelta.toFixed(2)
-          : "",
+        report.estimatedCostDelta !== undefined ? report.estimatedCostDelta.toFixed(2) : "",
       comment_url: commentUrl ?? "",
       report_json: JSON.stringify(report),
     });
@@ -180,16 +171,12 @@ async function runAnalyses(
   const fileConfig = (config as ActionConfig & { fileConfig?: AltimateConfig }).fileConfig;
   const isV2 = fileConfig && (fileConfig as unknown as { version: number }).version === 2;
 
-  const promises: [
-    Promise<SQLIssue[]>,
-    Promise<ImpactResult | null>,
-    Promise<CostEstimate[]>,
-  ] = [
+  const promises: [Promise<SQLIssue[]>, Promise<ImpactResult | null>, Promise<CostEstimate[]>] = [
     // SQL review
     config.sqlReview && (config.mode === "full" || config.mode === "static" || config.mode === "ai")
-      ? (isV2
+      ? isV2
         ? runV2CheckAnalysis(sqlFiles, fileConfig as unknown as AltimateConfigV2)
-        : analyzeSQLFiles(sqlFiles, config))
+        : analyzeSQLFiles(sqlFiles, config)
       : Promise.resolve([]),
 
     // Impact analysis
@@ -213,12 +200,19 @@ async function runAnalyses(
       // Fallback: use altimate-code CLI for impact analysis (deterministic, no LLM needed)
       core.info("No manifest — attempting impact analysis via altimate-code CLI");
       try {
-        const modelNames = dbtFiles.map((f) => f.filename.replace(/\.sql$/, "").split("/").pop()!);
-        const prompt = `Run impact_analysis for the following dbt models: ${modelNames.join(", ")}. Return a JSON object with: modifiedModels (string[]), downstreamModels (string[]), affectedExposures (string[]), affectedTests (string[]), impactScore (number 0-100).`;
-        const result = await runCLI(
-          ["run", "--format", "json", "--prompt", prompt],
-          { cwd: dbtProjectDir, timeout: 120_000, env: {} },
+        const modelNames = dbtFiles.map(
+          (f) =>
+            f.filename
+              .replace(/\.sql$/, "")
+              .split("/")
+              .pop()!,
         );
+        const prompt = `Run impact_analysis for the following dbt models: ${modelNames.join(", ")}. Return a JSON object with: modifiedModels (string[]), downstreamModels (string[]), affectedExposures (string[]), affectedTests (string[]), impactScore (number 0-100).`;
+        const result = await runCLI(["run", "--format", "json", "--prompt", prompt], {
+          cwd: dbtProjectDir,
+          timeout: 120_000,
+          env: {},
+        });
         if (result.json && typeof result.json === "object") {
           const data = result.json as Record<string, unknown>;
           return {
@@ -230,7 +224,9 @@ async function runAnalyses(
           };
         }
       } catch (err) {
-        core.warning(`CLI impact analysis failed: ${err instanceof Error ? err.message : String(err)}`);
+        core.warning(
+          `CLI impact analysis failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
 
       core.info("Impact analysis unavailable — no manifest and CLI fallback failed");
@@ -238,9 +234,7 @@ async function runAnalyses(
     })(),
 
     // Cost estimation
-    config.costEstimation
-      ? estimateCost(sqlFiles, config)
-      : Promise.resolve([]),
+    config.costEstimation ? estimateCost(sqlFiles, config) : Promise.resolve([]),
   ];
 
   return Promise.all(promises);
@@ -257,7 +251,9 @@ async function runV2CheckAnalysis(
 ): Promise<SQLIssue[]> {
   const cliReady = await isCheckCommandAvailable();
   if (!cliReady) {
-    core.warning("v2 config detected but altimate-code CLI unavailable — falling back to built-in rules");
+    core.warning(
+      "v2 config detected but altimate-code CLI unavailable — falling back to built-in rules",
+    );
     return analyzeSQLFiles(sqlFiles, { mode: "static" } as ActionConfig);
   }
 
@@ -284,8 +280,7 @@ async function handleInteractiveMention(config: ActionConfig): Promise<void> {
   if (parsed) {
     core.info(`Parsed command: ${parsed.command} (args: ${parsed.args.join(", ")})`);
     const prNumber =
-      github.context.payload.pull_request?.number ??
-      github.context.payload.issue?.number;
+      github.context.payload.pull_request?.number ?? github.context.payload.issue?.number;
 
     if (!prNumber) {
       core.warning("Could not determine PR number from event payload");
@@ -308,9 +303,7 @@ async function handleInteractiveMention(config: ActionConfig): Promise<void> {
   const result = await runCLI(["github", "run"], { env, timeout: 300_000 });
 
   if (result.exitCode !== 0) {
-    core.warning(
-      `Interactive mention handler exited with code ${result.exitCode}`,
-    );
+    core.warning(`Interactive mention handler exited with code ${result.exitCode}`);
   }
 }
 
@@ -324,9 +317,7 @@ function shouldFail(issues: SQLIssue[], failOn: FailOn): boolean {
   const threshold = failOn === "error" ? Severity.Error : Severity.Critical;
   const thresholdWeight = SEVERITY_WEIGHT[threshold];
 
-  return issues.some(
-    (issue) => SEVERITY_WEIGHT[issue.severity] >= thresholdWeight,
-  );
+  return issues.some((issue) => SEVERITY_WEIGHT[issue.severity] >= thresholdWeight);
 }
 
 /**
@@ -378,15 +369,10 @@ function parseConfig(): ActionConfig {
       ["info", "warning", "error", "critical"],
       "warning",
     ) as Severity,
-    commentMode: envEnum(
-      "COMMENT_MODE",
-      ["single", "inline", "both"],
-      "single",
-    ) as CommentMode,
+    commentMode: envEnum("COMMENT_MODE", ["single", "inline", "both"], "single") as CommentMode,
     failOn: envEnum("FAIL_ON", ["none", "error", "critical"], "none") as FailOn,
   };
 }
-
 
 function envBool(name: string, defaultValue: boolean): boolean {
   const raw = process.env[name];
@@ -401,11 +387,7 @@ function envInt(name: string, defaultValue: number): number {
   return Number.isNaN(parsed) ? defaultValue : parsed;
 }
 
-function envEnum(
-  name: string,
-  allowed: string[],
-  defaultValue: string,
-): string {
+function envEnum(name: string, allowed: string[], defaultValue: string): string {
   const raw = process.env[name]?.toLowerCase();
   if (!raw || !allowed.includes(raw)) return defaultValue;
   return raw;

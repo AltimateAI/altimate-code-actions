@@ -35,7 +35,9 @@ function hasCTEs(sql: string): boolean {
 
 /** Check if SQL contains window functions. */
 function hasWindowFunctions(sql: string): boolean {
-  return /\b(ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|SUM|COUNT|AVG|MIN|MAX)\s*\([^)]*\)\s*OVER\s*\(/i.test(sql);
+  return /\b(ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|SUM|COUNT|AVG|MIN|MAX)\s*\([^)]*\)\s*OVER\s*\(/i.test(
+    sql,
+  );
 }
 
 describe("Real Project Analysis", () => {
@@ -81,10 +83,7 @@ describe("Real Project Analysis", () => {
     });
 
     it("staging models use source() macro", () => {
-      const stagingFiles = findFiles(
-        resolve(JAFFLE_SHOP, "models/staging"),
-        ".sql",
-      );
+      const stagingFiles = findFiles(resolve(JAFFLE_SHOP, "models/staging"), ".sql");
 
       const filesWithSource = stagingFiles.filter((f) => {
         const content = readFileSync(f, "utf-8");
@@ -95,10 +94,7 @@ describe("Real Project Analysis", () => {
     });
 
     it("marts models use ref() macro", () => {
-      const martsFiles = findFiles(
-        resolve(JAFFLE_SHOP, "models/marts"),
-        ".sql",
-      );
+      const martsFiles = findFiles(resolve(JAFFLE_SHOP, "models/marts"), ".sql");
 
       const filesWithRef = martsFiles.filter((f) => {
         const content = readFileSync(f, "utf-8");
@@ -127,9 +123,7 @@ describe("Real Project Analysis", () => {
 
     it("models contain Jinja templating", () => {
       const sqlFiles = findFiles(resolve(JAFFLE_SHOP, "models"), ".sql");
-      const jinjaFiles = sqlFiles.filter((f) =>
-        hasJinjaTemplates(readFileSync(f, "utf-8")),
-      );
+      const jinjaFiles = sqlFiles.filter((f) => hasJinjaTemplates(readFileSync(f, "utf-8")));
       // Most dbt models should have Jinja
       expect(jinjaFiles.length).toBeGreaterThan(sqlFiles.length / 2);
     });
@@ -159,10 +153,7 @@ describe("Real Project Analysis", () => {
     });
 
     it("handles complex window functions", () => {
-      const mrrSql = readFileSync(
-        resolve(MRR_PLAYBOOK, "models/mrr.sql"),
-        "utf-8",
-      );
+      const mrrSql = readFileSync(resolve(MRR_PLAYBOOK, "models/mrr.sql"), "utf-8");
 
       expect(hasWindowFunctions(mrrSql)).toBe(true);
       // Specifically uses LAG for previous month MRR
@@ -170,37 +161,26 @@ describe("Real Project Analysis", () => {
     });
 
     it("detects CTE patterns", () => {
-      const mrrSql = readFileSync(
-        resolve(MRR_PLAYBOOK, "models/mrr.sql"),
-        "utf-8",
-      );
+      const mrrSql = readFileSync(resolve(MRR_PLAYBOOK, "models/mrr.sql"), "utf-8");
 
       expect(hasCTEs(mrrSql)).toBe(true);
     });
 
     it("uses dbt_utils macros", () => {
-      const mrrSql = readFileSync(
-        resolve(MRR_PLAYBOOK, "models/mrr.sql"),
-        "utf-8",
-      );
+      const mrrSql = readFileSync(resolve(MRR_PLAYBOOK, "models/mrr.sql"), "utf-8");
 
       expect(mrrSql).toContain("dbt_utils");
     });
 
     it("contains ref() macros linking models", () => {
       const sqlFiles = findFiles(resolve(MRR_PLAYBOOK, "models"), ".sql");
-      const filesWithRef = sqlFiles.filter((f) =>
-        /\{\{\s*ref\s*\(/.test(readFileSync(f, "utf-8")),
-      );
+      const filesWithRef = sqlFiles.filter((f) => /\{\{\s*ref\s*\(/.test(readFileSync(f, "utf-8")));
 
       expect(filesWithRef.length).toBeGreaterThan(0);
     });
 
     it("has CASE/WHEN logic for MRR categorization", () => {
-      const mrrSql = readFileSync(
-        resolve(MRR_PLAYBOOK, "models/mrr.sql"),
-        "utf-8",
-      );
+      const mrrSql = readFileSync(resolve(MRR_PLAYBOOK, "models/mrr.sql"), "utf-8");
 
       expect(mrrSql.toUpperCase()).toContain("CASE");
       expect(mrrSql.toUpperCase()).toContain("WHEN");

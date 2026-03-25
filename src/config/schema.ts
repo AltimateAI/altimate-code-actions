@@ -1,5 +1,4 @@
-import { Severity } from "../analysis/types.js";
-import type { CommentMode } from "../analysis/types.js";
+import { Severity, type CommentMode } from "../analysis/types.js";
 
 /** Supported SQL dialects. */
 export type Dialect =
@@ -220,9 +219,12 @@ export interface AltimateConfigV2 {
  * Build `CheckCommandOptions` from a v2 config, collecting all enabled
  * check names and passing through schema/policy/dialect settings.
  */
-export function buildCheckOptionsFromV2(
-  config: AltimateConfigV2,
-): { checks: string[]; schemaPath?: string; policyPath?: string; dialect?: string } {
+export function buildCheckOptionsFromV2(config: AltimateConfigV2): {
+  checks: string[];
+  schemaPath?: string;
+  policyPath?: string;
+  dialect?: string;
+} {
   const checks: string[] = [];
   for (const [name, checkConfig] of Object.entries(config.checks)) {
     if (checkConfig.enabled) {

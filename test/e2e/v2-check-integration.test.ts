@@ -1,17 +1,8 @@
 import { describe, it, expect } from "bun:test";
-import type {
-  ReviewReport,
-  SQLIssue,
-} from "../../src/analysis/types.js";
-import { Severity } from "../../src/analysis/types.js";
-import { parseCheckOutput } from "../../src/analysis/cli-check.js";
-import type { CheckOutput } from "../../src/analysis/cli-check.js";
-import { buildCheckOptionsFromV2 } from "../../src/config/schema.js";
-import type { AltimateConfigV2 } from "../../src/config/schema.js";
-import {
-  buildComment,
-  buildIssuesSection,
-} from "../../src/reporting/comment.js";
+import { Severity, type ReviewReport, type SQLIssue } from "../../src/analysis/types.js";
+import { parseCheckOutput, type CheckOutput } from "../../src/analysis/cli-check.js";
+import { buildCheckOptionsFromV2, type AltimateConfigV2 } from "../../src/config/schema.js";
+import { buildComment, buildIssuesSection } from "../../src/reporting/comment.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -137,18 +128,36 @@ describe("V2 check integration — end to end", () => {
       results: {
         lint: {
           findings: [
-            { file: "a.sql", line: 1, code: "L001", severity: "warning", message: "SELECT * detected" },
+            {
+              file: "a.sql",
+              line: 1,
+              code: "L001",
+              severity: "warning",
+              message: "SELECT * detected",
+            },
             { file: "a.sql", line: 10, code: "L002", severity: "error", message: "Cartesian join" },
           ],
         },
         safety: {
           findings: [
-            { file: "b.sql", line: 5, rule: "injection", severity: "critical", message: "SQL injection risk" },
+            {
+              file: "b.sql",
+              line: 5,
+              rule: "injection",
+              severity: "critical",
+              message: "SQL injection risk",
+            },
           ],
         },
         pii: {
           findings: [
-            { file: "c.sql", line: 3, rule: "email", severity: "warning", message: "PII: email column" },
+            {
+              file: "c.sql",
+              line: 3,
+              rule: "email",
+              severity: "warning",
+              message: "PII: email column",
+            },
           ],
         },
       },
@@ -172,10 +181,34 @@ describe("V2 check integration — end to end", () => {
 
   it("comment groups issues by prefix (Lint, Safety, PII)", () => {
     const issues: SQLIssue[] = [
-      { file: "a.sql", line: 1, message: "SELECT *", severity: Severity.Warning, rule: "lint/L001" },
-      { file: "a.sql", line: 10, message: "Cartesian", severity: Severity.Error, rule: "lint/L002" },
-      { file: "b.sql", line: 5, message: "Injection", severity: Severity.Critical, rule: "safety/injection" },
-      { file: "c.sql", line: 3, message: "Email PII", severity: Severity.Warning, rule: "pii/email" },
+      {
+        file: "a.sql",
+        line: 1,
+        message: "SELECT *",
+        severity: Severity.Warning,
+        rule: "lint/L001",
+      },
+      {
+        file: "a.sql",
+        line: 10,
+        message: "Cartesian",
+        severity: Severity.Error,
+        rule: "lint/L002",
+      },
+      {
+        file: "b.sql",
+        line: 5,
+        message: "Injection",
+        severity: Severity.Critical,
+        rule: "safety/injection",
+      },
+      {
+        file: "c.sql",
+        line: 3,
+        message: "Email PII",
+        severity: Severity.Warning,
+        rule: "pii/email",
+      },
     ];
 
     const section = buildIssuesSection(issues);
@@ -189,8 +222,20 @@ describe("V2 check integration — end to end", () => {
   it("comment renders category subsection headers only when multiple categories", () => {
     // Single category — no subsection headers
     const singleCategory: SQLIssue[] = [
-      { file: "a.sql", line: 1, message: "SELECT *", severity: Severity.Warning, rule: "lint/L001" },
-      { file: "a.sql", line: 10, message: "Cartesian", severity: Severity.Error, rule: "lint/L002" },
+      {
+        file: "a.sql",
+        line: 1,
+        message: "SELECT *",
+        severity: Severity.Warning,
+        rule: "lint/L001",
+      },
+      {
+        file: "a.sql",
+        line: 10,
+        message: "Cartesian",
+        severity: Severity.Error,
+        rule: "lint/L002",
+      },
     ];
 
     const section = buildIssuesSection(singleCategory);
@@ -199,7 +244,13 @@ describe("V2 check integration — end to end", () => {
     // Multiple categories — subsection headers appear
     const multiCategory: SQLIssue[] = [
       ...singleCategory,
-      { file: "b.sql", line: 5, message: "Injection", severity: Severity.Critical, rule: "safety/injection" },
+      {
+        file: "b.sql",
+        line: 5,
+        message: "Injection",
+        severity: Severity.Critical,
+        rule: "safety/injection",
+      },
     ];
 
     const multiSection = buildIssuesSection(multiCategory);
@@ -210,8 +261,20 @@ describe("V2 check integration — end to end", () => {
   it("issues without category prefix are grouped under SQL Quality", () => {
     // v1-style issues (no slash prefix)
     const issues: SQLIssue[] = [
-      { file: "a.sql", line: 1, message: "SELECT *", severity: Severity.Warning, rule: "no-select-star" },
-      { file: "b.sql", line: 5, message: "Injection", severity: Severity.Critical, rule: "safety/injection" },
+      {
+        file: "a.sql",
+        line: 1,
+        message: "SELECT *",
+        severity: Severity.Warning,
+        rule: "no-select-star",
+      },
+      {
+        file: "b.sql",
+        line: 5,
+        message: "Injection",
+        severity: Severity.Critical,
+        rule: "safety/injection",
+      },
     ];
 
     const section = buildIssuesSection(issues);
@@ -245,7 +308,13 @@ describe("V2 check integration — end to end", () => {
       results: {
         lint: {
           findings: [
-            { file: "models/fct_orders.sql", line: 3, code: "L001", severity: "warning", message: "SELECT * detected" },
+            {
+              file: "models/fct_orders.sql",
+              line: 3,
+              code: "L001",
+              severity: "warning",
+              message: "SELECT * detected",
+            },
           ],
         },
         safety: {
@@ -254,13 +323,25 @@ describe("V2 check integration — end to end", () => {
         },
         policy: {
           findings: [
-            { file: "models/fct_orders.sql", line: 1, rule: "no_drop", severity: "critical", message: "DROP not allowed" },
+            {
+              file: "models/fct_orders.sql",
+              line: 1,
+              rule: "no_drop",
+              severity: "critical",
+              message: "DROP not allowed",
+            },
           ],
           allowed: false,
         },
         pii: {
           findings: [
-            { file: "models/dim_users.sql", line: 7, rule: "email", severity: "warning", message: "PII: email" },
+            {
+              file: "models/dim_users.sql",
+              line: 7,
+              rule: "email",
+              severity: "warning",
+              message: "PII: email",
+            },
           ],
         },
       },
@@ -269,11 +350,7 @@ describe("V2 check integration — end to end", () => {
     // Step 3: Parse output
     const issues = parseCheckOutput(cliOutput);
     expect(issues).toHaveLength(3);
-    expect(issues.map((i) => i.rule)).toEqual([
-      "lint/L001",
-      "policy/no_drop",
-      "pii/email",
-    ]);
+    expect(issues.map((i) => i.rule)).toEqual(["lint/L001", "policy/no_drop", "pii/email"]);
 
     // Step 4: Build comment
     const report = makeReport({
@@ -298,9 +375,21 @@ describe("V2 check integration — end to end", () => {
     // alongside CLI check issues
     const issues: SQLIssue[] = [
       // v2-style (category prefixed)
-      { file: "a.sql", line: 1, message: "SELECT *", severity: Severity.Warning, rule: "lint/L001" },
+      {
+        file: "a.sql",
+        line: 1,
+        message: "SELECT *",
+        severity: Severity.Warning,
+        rule: "lint/L001",
+      },
       // v1-style (no category prefix)
-      { file: "b.sql", line: 5, message: "Missing WHERE", severity: Severity.Warning, rule: "missing-where" },
+      {
+        file: "b.sql",
+        line: 5,
+        message: "Missing WHERE",
+        severity: Severity.Warning,
+        rule: "missing-where",
+      },
     ];
 
     const report = makeReport({
@@ -318,8 +407,20 @@ describe("V2 check integration — end to end", () => {
 
   it("comment with only lint issues does not have category subsections", () => {
     const issues: SQLIssue[] = [
-      { file: "a.sql", line: 1, message: "SELECT *", severity: Severity.Warning, rule: "lint/L001" },
-      { file: "a.sql", line: 10, message: "Cartesian", severity: Severity.Error, rule: "lint/L002" },
+      {
+        file: "a.sql",
+        line: 1,
+        message: "SELECT *",
+        severity: Severity.Warning,
+        rule: "lint/L001",
+      },
+      {
+        file: "a.sql",
+        line: 10,
+        message: "Cartesian",
+        severity: Severity.Error,
+        rule: "lint/L002",
+      },
     ];
 
     const report = makeReport({

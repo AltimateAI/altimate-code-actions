@@ -1,15 +1,12 @@
 import { describe, it, expect } from "bun:test";
-import type {
-  ReviewReport,
-  SQLIssue,
-  ImpactResult,
-  CostEstimate,
-} from "../../src/analysis/types.js";
-import { Severity } from "../../src/analysis/types.js";
 import {
-  buildComment,
-  buildASCIIDAG,
-} from "../../src/reporting/comment.js";
+  Severity,
+  type ReviewReport,
+  type SQLIssue,
+  type ImpactResult,
+  type CostEstimate,
+} from "../../src/analysis/types.js";
+import { buildComment, buildASCIIDAG } from "../../src/reporting/comment.js";
 import {
   assertCommentHasSection,
   assertCommentHasSeverity,
@@ -72,9 +69,7 @@ describe("PR Comment Generation v0.3", () => {
 
   it("includes collapsible issues section when warnings exist", () => {
     const report = makeReport({
-      issues: [
-        makeIssue({ severity: Severity.Warning, message: "Missing GROUP BY" }),
-      ],
+      issues: [makeIssue({ severity: Severity.Warning, message: "Missing GROUP BY" })],
       issuesFound: 1,
     });
     const comment = buildComment(report)!;
@@ -86,9 +81,7 @@ describe("PR Comment Generation v0.3", () => {
 
   it("auto-expands critical issues (not in <details>)", () => {
     const report = makeReport({
-      issues: [
-        makeIssue({ severity: Severity.Critical, message: "Critical failure" }),
-      ],
+      issues: [makeIssue({ severity: Severity.Critical, message: "Critical failure" })],
       issuesFound: 1,
     });
     const comment = buildComment(report)!;
@@ -171,9 +164,7 @@ describe("PR Comment Generation v0.3", () => {
   it("shows cost delta in executive line", () => {
     const report = makeReport({
       estimatedCostDelta: 1.6,
-      costEstimates: [
-        { file: "a.sql", costDelta: 1.6, currency: "USD" },
-      ],
+      costEstimates: [{ file: "a.sql", costDelta: 1.6, currency: "USD" }],
     });
     const comment = buildComment(report)!;
 
@@ -263,11 +254,7 @@ describe("PR Comment Generation v0.3", () => {
       impactScore: 50,
     };
 
-    const dag = buildASCIIDAG(
-      impact.modifiedModels,
-      impact.downstreamModels,
-      impact,
-    );
+    const dag = buildASCIIDAG(impact.modifiedModels, impact.downstreamModels, impact);
 
     expect(dag).toContain("stg_orders");
     expect(dag).toContain("fct_revenue");

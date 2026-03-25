@@ -4,10 +4,7 @@ import { expect } from "bun:test";
  * Assert that a PR comment body contains a specific section.
  * Matches `<summary>` tags, `##`/`###` headings, and `**Bold**` labels.
  */
-export function assertCommentHasSection(
-  comment: string,
-  section: string,
-): void {
+export function assertCommentHasSection(comment: string, section: string): void {
   const escaped = escapeRegex(section);
   // Match in headings, summary tags, or bold labels
   const pattern = new RegExp(
@@ -20,10 +17,7 @@ export function assertCommentHasSection(
 /**
  * Assert that a PR comment mentions a specific SQL issue by keyword or rule ID.
  */
-export function assertCommentHasIssue(
-  comment: string,
-  issue: string,
-): void {
+export function assertCommentHasIssue(comment: string, issue: string): void {
   const lower = comment.toLowerCase();
   const issueLower = issue.toLowerCase();
   expect(lower).toContain(issueLower);
@@ -62,15 +56,9 @@ export function assertCommentFormat(comment: string): void {
 /**
  * Assert that a comment does NOT contain a section.
  */
-export function assertCommentMissingSection(
-  comment: string,
-  section: string,
-): void {
+export function assertCommentMissingSection(comment: string, section: string): void {
   const escaped = escapeRegex(section);
-  const pattern = new RegExp(
-    `(#{2,3}\\s+.*${escaped}|<summary>.*${escaped})`,
-    "mi",
-  );
+  const pattern = new RegExp(`(#{2,3}\\s+.*${escaped}|<summary>.*${escaped})`, "mi");
   expect(comment).not.toMatch(pattern);
 }
 

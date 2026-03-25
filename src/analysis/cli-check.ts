@@ -1,7 +1,5 @@
 import { runCLI } from "../util/cli.js";
-import type { SQLIssue } from "./types.js";
-import { Severity } from "./types.js";
-import type { ChangedFile } from "./types.js";
+import { Severity, type SQLIssue, type ChangedFile } from "./types.js";
 import * as core from "@actions/core";
 
 /** Structured output from `altimate-code check --format json`. */
@@ -77,9 +75,12 @@ export async function runCheckCommand(
   const args = [
     "check",
     ...filePaths,
-    "--format", "json",
-    "--checks", checksArg,
-    "--severity", options.severity ?? "info",
+    "--format",
+    "json",
+    "--checks",
+    checksArg,
+    "--severity",
+    options.severity ?? "info",
   ];
 
   if (options.schemaPath) args.push("--schema", options.schemaPath);
