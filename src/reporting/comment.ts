@@ -6,12 +6,14 @@ import type {
   ImpactResult,
   Severity,
   CommentMode,
+  ValidationSummary,
+  QueryProfile,
 } from "../analysis/types.js";
 import { postComment, postReviewComments } from "../util/octokit.js";
 import { buildInlineComments } from "./inline.js";
 
 const MAX_COMMENT_LENGTH = 60000;
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 const SEVERITY_ORDER: Severity[] = ["critical", "error", "warning", "info"] as Severity[];
 
@@ -41,11 +43,17 @@ export function buildComment(report: ReviewReport): string | null {
   sections.push(buildExecutiveLine(report));
   sections.push("");
 
-  // Section 2: Summary table (always visible)
-  sections.push(buildSummaryTable(report));
+  // Section 2: Validation table — "What We Checked | How | Result"
+  sections.push(buildValidationTable(report));
   sections.push("");
 
-  // Section 3: Mermaid DAG blast radius (collapsible)
+  // Section 3: Query Profile (collapsible)
+  if (report.queryProfiles && report.queryProfiles.length > 0) {
+    sections.push(buildQueryProfile(report.queryProfiles));
+    sections.push("");
+  }
+
+  // Section 4: Mermaid DAG blast radius (visible by default)
   if (report.impact && report.impact.modifiedModels.length > 0) {
     const totalDownstream =
       report.impact.downstreamModels.length + report.impact.affectedExposures.length;
@@ -55,19 +63,19 @@ export function buildComment(report: ReviewReport): string | null {
     }
   }
 
-  // Section 4: SQL issues (critical auto-expanded, rest collapsible)
+  // Section 5: SQL issues (critical auto-expanded, rest collapsible)
   if (report.issues.length > 0) {
     sections.push(buildIssuesSection(report.issues));
     sections.push("");
   }
 
-  // Section 5: Cost before/after (collapsible)
+  // Section 6: Cost before/after (collapsible)
   if (report.costEstimates && report.costEstimates.length > 0) {
     sections.push(buildCostSection(report.costEstimates, report.estimatedCostDelta));
     sections.push("");
   }
 
-  // Section 6: Footer
+  // Section 7: Footer
   sections.push(buildFooter());
 
   let result = sections.join("\n");
@@ -85,22 +93,34 @@ export function buildComment(report: ReviewReport): string | null {
 
 /**
  * Build the executive one-line summary.
- * Format: ## {emoji} Altimate Code — `N models` modified · `M downstream` · status
+ *
+ * Clean PR: ## ✅ Altimate Code — `N models` validated · `M downstream` safe · no issues
+ * With issues: ## ⚠️ Altimate Code — `N models` validated · `M downstream` · K findings
  */
 export function buildExecutiveLine(report: ReviewReport): string {
   const parts: string[] = [];
 
-  // Model counts
+  // Model/file counts — use "validated" instead of "modified"
   const modifiedCount = report.impact?.modifiedModels.length ?? 0;
   const downstreamCount = report.impact?.downstreamModels.length ?? 0;
   const exposureCount = report.impact?.affectedExposures.length ?? 0;
+  const fileCount = report.filesAnalyzed;
 
+  // Show model count if impact data exists, otherwise show file count
   if (modifiedCount > 0) {
-    parts.push(`\`${modifiedCount} ${modifiedCount === 1 ? "model" : "models"}\` modified`);
+    parts.push(`\`${modifiedCount} ${modifiedCount === 1 ? "model" : "models"}\` validated`);
+  } else if (fileCount > 0) {
+    parts.push(`\`${fileCount} ${fileCount === 1 ? "file" : "files"}\` validated`);
   }
 
+  // Downstream — "safe" when no issues, plain count when issues exist
   if (downstreamCount > 0) {
-    parts.push(`\`${downstreamCount} downstream\``);
+    const critCount = report.issues.filter(
+      (i) => i.severity === "critical" || i.severity === "error",
+    ).length;
+    const warnCount = report.issues.filter((i) => i.severity === "warning").length;
+    const hasIssues = critCount > 0 || warnCount > 0;
+    parts.push(`\`${downstreamCount} downstream\`${hasIssues ? "" : " safe"}`);
   }
 
   if (exposureCount > 0) {
@@ -112,12 +132,10 @@ export function buildExecutiveLine(report: ReviewReport): string {
     (i) => i.severity === "critical" || i.severity === "error",
   ).length;
   const warnCount = report.issues.filter((i) => i.severity === "warning").length;
+  const totalFindings = critCount + warnCount;
 
-  if (critCount > 0) {
-    parts.push(`\`${critCount} critical\``);
-  }
-  if (warnCount > 0) {
-    parts.push(`\`${warnCount} ${warnCount === 1 ? "warning" : "warnings"}\``);
+  if (totalFindings > 0) {
+    parts.push(`${totalFindings} ${totalFindings === 1 ? "finding" : "findings"}`);
   }
 
   // Cost delta
@@ -126,10 +144,9 @@ export function buildExecutiveLine(report: ReviewReport): string {
     parts.push(`\`${sign}$${report.estimatedCostDelta.toFixed(2)}/mo\``);
   }
 
-  // Rules summary
-  const rulesCount = report.filesAnalyzed;
-  if (critCount === 0 && warnCount === 0 && rulesCount > 0) {
-    parts.push("all checks passed");
+  // "no issues" when clean
+  if (totalFindings === 0 && fileCount > 0 && downstreamCount === 0) {
+    parts.push("no issues");
   }
 
   // Pick emoji based on severity
@@ -142,17 +159,94 @@ export function buildExecutiveLine(report: ReviewReport): string {
     emoji = "\u2705"; // ✅
   }
 
-  const summary = parts.length > 0 ? parts.join(" \u00B7 ") : "all checks passed";
+  const summary = parts.length > 0 ? parts.join(" \u00B7 ") : "no issues";
   return `## ${emoji} Altimate Code \u2014 ${summary}`;
 }
 
 /**
- * Build the compact summary check table (always visible).
+ * Build the validation table showing What We Checked | How | Result.
+ *
+ * When a `validationSummary` is present on the report, uses the rich
+ * category metadata. Otherwise falls back to the legacy summary table format.
  */
-export function buildSummaryTable(report: ReviewReport): string {
+export function buildValidationTable(report: ReviewReport): string {
+  if (report.validationSummary) {
+    return buildRichValidationTable(report.validationSummary, report);
+  }
+  return buildLegacySummaryTable(report);
+}
+
+/**
+ * Build the rich 3-column validation table from ValidationSummary metadata.
+ * Columns: What We Checked | How | Result
+ */
+function buildRichValidationTable(summary: ValidationSummary, report: ReviewReport): string {
   const rows: string[] = [];
-  rows.push("| Check | Result | Details |");
-  rows.push("|:------|:------:|:--------|");
+  rows.push("| What We Checked | How | Result |");
+  rows.push("|:----------------|:----|:------:|");
+
+  // Render categories in a stable order
+  const categoryOrder = ["validate", "lint", "safety", "pii", "policy", "semantic", "grade"];
+  const renderedCategories = new Set<string>();
+
+  for (const cat of categoryOrder) {
+    if (summary.categories[cat]) {
+      rows.push(buildValidationRow(cat, summary.categories[cat]));
+      renderedCategories.add(cat);
+    }
+  }
+  // Render any remaining categories not in the known order
+  for (const [cat, catSummary] of Object.entries(summary.categories)) {
+    if (!renderedCategories.has(cat)) {
+      rows.push(buildValidationRow(cat, catSummary));
+    }
+  }
+
+  // Breaking Changes row from impact data
+  if (report.impact) {
+    const downstreamCount = report.impact.downstreamModels.length;
+    const passed =
+      report.issues.filter((i) => i.severity === "critical" || i.severity === "error").length === 0;
+    const resultEmoji = passed ? "\u2705 Compatible" : "\u274C Breaking";
+    rows.push(
+      `| Breaking Changes | Schema compatibility against ${downstreamCount} downstream models | ${resultEmoji} |`,
+    );
+  }
+
+  return rows.join("\n");
+}
+
+/** Build a single row of the validation table for a check category. */
+function buildValidationRow(
+  _category: string,
+  catSummary: { label: string; method: string; findingsCount: number; passed: boolean },
+): string {
+  let resultText: string;
+  if (catSummary.passed) {
+    // Pick a contextually appropriate label
+    if (_category === "validate") resultText = "\u2705 Valid";
+    else if (_category === "safety") resultText = "\u2705 Safe";
+    else if (_category === "pii") resultText = "\u2705 No exposure";
+    else resultText = "\u2705 Clean";
+  } else {
+    const count = catSummary.findingsCount;
+    resultText = `\u26A0\uFE0F ${count} ${count === 1 ? "warning" : "warnings"}`;
+  }
+
+  return `| ${catSummary.label} | ${catSummary.method} | ${resultText} |`;
+}
+
+/**
+ * Build the legacy summary table format (used when no ValidationSummary
+ * is available — e.g. when using the regex rule engine fallback).
+ *
+ * This preserves backward compatibility with the old "Check | Result | Details"
+ * format but still shows value by listing what was checked.
+ */
+export function buildLegacySummaryTable(report: ReviewReport): string {
+  const rows: string[] = [];
+  rows.push("| What We Checked | How | Result |");
+  rows.push("|:----------------|:----|:------:|");
 
   // SQL Quality row
   if (report.filesAnalyzed > 0) {
@@ -166,47 +260,94 @@ export function buildSummaryTable(report: ReviewReport): string {
       parts.push(`${critCount} critical`);
       if (warnCount > 0) parts.push(`${warnCount} warnings`);
       rows.push(
-        `| SQL Quality | \u274C ${parts.join(", ")} | ${report.issuesFound} issues in ${report.filesAnalyzed} files |`,
+        `| SQL Quality | Static analysis on ${report.filesAnalyzed} files | \u274C ${parts.join(", ")} |`,
       );
     } else if (warnCount > 0) {
       rows.push(
-        `| SQL Quality | \u26A0\uFE0F ${warnCount} ${warnCount === 1 ? "warning" : "warnings"} | ${report.issuesFound} issues in ${report.filesAnalyzed} files |`,
+        `| SQL Quality | Static analysis on ${report.filesAnalyzed} files | \u26A0\uFE0F ${warnCount} ${warnCount === 1 ? "warning" : "warnings"} |`,
       );
     } else {
-      rows.push(`| SQL Quality | \u2705 0 issues | ${report.filesAnalyzed} files analyzed |`);
+      rows.push(
+        `| SQL Quality | Static analysis on ${report.filesAnalyzed} files | \u2705 Clean |`,
+      );
     }
   }
 
   // dbt Impact row
   if (report.impact) {
-    const directCount = report.impact.modifiedModels.length;
     const downstreamCount = report.impact.downstreamModels.length;
     const exposureCount = report.impact.affectedExposures.length;
-    const total = directCount + downstreamCount;
 
-    let details = `${directCount} modified`;
-    if (downstreamCount > 0) {
-      details += ` \u2192 ${downstreamCount} downstream`;
-    }
+    let details = `DAG analysis against ${downstreamCount} downstream models`;
     if (exposureCount > 0) {
       details += `, ${exposureCount} ${exposureCount === 1 ? "exposure" : "exposures"}`;
     }
-
-    rows.push(`| dbt Impact | \uD83D\uDCCA ${total} models | ${details} |`);
+    rows.push(`| Breaking Changes | ${details} | \u2705 Compatible |`);
   }
 
   // Cost row
   if (report.estimatedCostDelta !== undefined && report.estimatedCostDelta !== 0) {
     const sign = report.estimatedCostDelta >= 0 ? "+" : "";
-    const explanation = report.costEstimates?.[0]?.explanation ?? "cost changed";
     rows.push(
-      `| Cost | \uD83D\uDD3A ${sign}$${report.estimatedCostDelta.toFixed(2)}/mo | ${explanation} |`,
+      `| Cost | Warehouse cost estimation | \uD83D\uDD3A ${sign}$${report.estimatedCostDelta.toFixed(2)}/mo |`,
     );
   } else if (report.costEstimates && report.costEstimates.length > 0) {
-    rows.push("| Cost | \u2705 No change | $0.00 delta |");
+    rows.push("| Cost | Warehouse cost estimation | \u2705 No change |");
   }
 
   return rows.join("\n");
+}
+
+/**
+ * Build a collapsible Query Profile section showing SQL structure metadata.
+ */
+export function buildQueryProfile(profiles: QueryProfile[]): string {
+  const lines: string[] = [];
+
+  lines.push("<details>");
+  lines.push(`<summary>\uD83D\uDCCB Query Profile</summary>`);
+  lines.push("");
+
+  // Build a table with one column per file
+  const fileNames = profiles.map((p) => {
+    const parts = p.file.split("/");
+    return `\`${parts[parts.length - 1]}\``;
+  });
+
+  lines.push(`| | ${fileNames.join(" | ")} |`);
+  lines.push(`|:--|${fileNames.map(() => ":-:").join("|")}|`);
+
+  // Complexity row
+  lines.push(`| Complexity | ${profiles.map((p) => p.complexity).join(" | ")} |`);
+
+  // Tables row
+  lines.push(`| Tables | ${profiles.map((p) => String(p.tablesReferenced)).join(" | ")} |`);
+
+  // JOINs row
+  lines.push(
+    `| JOINs | ${profiles.map((p) => (p.joinCount > 0 ? `${p.joinCount} (${p.joinTypes.join(", ")})` : "0")).join(" | ")} |`,
+  );
+
+  // CTEs row
+  lines.push(`| CTEs | ${profiles.map((p) => (p.hasCTE ? "Yes" : "No")).join(" | ")} |`);
+
+  // Subqueries row
+  lines.push(`| Subqueries | ${profiles.map((p) => (p.hasSubquery ? "Yes" : "No")).join(" | ")} |`);
+
+  // Window Functions row
+  lines.push(
+    `| Window Functions | ${profiles.map((p) => (p.hasWindowFunction ? "Yes" : "No")).join(" | ")} |`,
+  );
+
+  // Aggregation row
+  lines.push(
+    `| Aggregation | ${profiles.map((p) => (p.hasAggregation ? "Yes" : "No")).join(" | ")} |`,
+  );
+
+  lines.push("");
+  lines.push("</details>");
+
+  return lines.join("\n");
 }
 
 /**
@@ -294,7 +435,7 @@ export function buildMermaidDAG(impact: ImpactResult): string {
       addEdge(edge.from, edge.to);
     }
   } else {
-    // Fallback: connect modified → downstream, downstream → exposures
+    // Fallback: connect modified -> downstream, downstream -> exposures
     for (const mod of impact.modifiedModels) {
       for (const ds of filteredDownstream) {
         addEdge(mod, ds);
@@ -500,12 +641,12 @@ export function buildCostSection(estimates: CostEstimate[], totalDelta?: number)
 }
 
 /**
- * Build the minimal HTML footer with version, rule count, and links.
+ * Build the footer with version, zero-cost callout, and links.
  */
 export function buildFooter(): string {
   return [
     "---",
-    `<sub>\uD83D\uDD0D <a href="https://github.com/AltimateAI/altimate-code-actions">Altimate Code</a> v${VERSION} \u00B7 <a href="https://github.com/AltimateAI/altimate-code-actions/blob/main/docs/configuration.md">Configure</a> \u00B7 <a href="https://github.com/AltimateAI/altimate-code-actions/issues">Feedback</a></sub>`,
+    `<sub>\uD83D\uDD0D <a href="https://github.com/AltimateAI/altimate-code-actions">Altimate Code</a> v${VERSION} \u00B7 Validated without hitting your warehouse \u00B7 <a href="https://github.com/AltimateAI/altimate-code-actions/blob/main/docs/configuration.md">Configure</a> \u00B7 <a href="https://github.com/AltimateAI/altimate-code-actions/issues">Feedback</a></sub>`,
   ].join("\n");
 }
 

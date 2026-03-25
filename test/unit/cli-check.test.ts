@@ -1,5 +1,10 @@
 import { describe, it, expect } from "bun:test";
-import { parseCheckOutput, type CheckOutput } from "../../src/analysis/cli-check.js";
+import {
+  parseCheckOutput,
+  extractValidationSummary,
+  CATEGORY_META,
+  type CheckOutput,
+} from "../../src/analysis/cli-check.js";
 import { Severity } from "../../src/analysis/types.js";
 
 function makeCheckOutput(overrides?: Partial<CheckOutput>): CheckOutput {
@@ -498,5 +503,104 @@ describe("parseCheckOutput", () => {
     });
     // Array is an object in JS, but Object.entries on [] returns []
     expect(parseCheckOutput(output)).toEqual([]);
+  });
+});
+
+describe("extractValidationSummary", () => {
+  it("builds summary with category metadata for clean output", () => {
+    const output = makeCheckOutput({
+      checks_run: ["lint", "safety"],
+      results: {
+        lint: { findings: [], warning_count: 0 },
+        safety: { findings: [], safe: true },
+      },
+    });
+
+    const summary = extractValidationSummary(output);
+
+    expect(summary.checksRun).toEqual(["lint", "safety"]);
+    expect(summary.schemaResolved).toBe(false);
+    expect(summary.categories.lint).toBeDefined();
+    expect(summary.categories.lint.passed).toBe(true);
+    expect(summary.categories.lint.findingsCount).toBe(0);
+    expect(summary.categories.lint.label).toContain("Anti-Patterns");
+    expect(summary.categories.lint.method).toContain("AST analysis");
+    // When clean, method should include example patterns
+    expect(summary.categories.lint.method).toContain("SELECT *");
+
+    expect(summary.categories.safety).toBeDefined();
+    expect(summary.categories.safety.passed).toBe(true);
+    expect(summary.categories.safety.label).toContain("Injection Safety");
+    expect(summary.categories.safety.method).toContain("Pattern scan");
+  });
+
+  it("shows findings count when category has issues", () => {
+    const output = makeCheckOutput({
+      checks_run: ["lint"],
+      results: {
+        lint: {
+          findings: [
+            { file: "a.sql", code: "L001", severity: "warning", message: "SELECT *" },
+            { file: "b.sql", code: "L003", severity: "info", message: "ORDER BY ordinal" },
+          ],
+          warning_count: 1,
+        },
+      },
+    });
+
+    const summary = extractValidationSummary(output);
+
+    expect(summary.categories.lint.passed).toBe(false);
+    expect(summary.categories.lint.findingsCount).toBe(2);
+    // When findings exist, method should NOT include examples
+    expect(summary.categories.lint.method).toBe("AST analysis");
+  });
+
+  it("includes schema resolution info for validate category", () => {
+    const output = makeCheckOutput({
+      checks_run: ["validate"],
+      schema_resolved: true,
+      files_checked: 14,
+      results: {
+        validate: { findings: [], valid: true },
+      },
+    });
+
+    const summary = extractValidationSummary(output);
+
+    expect(summary.schemaResolved).toBe(true);
+    expect(summary.categories.validate.method).toContain("DataFusion");
+    expect(summary.categories.validate.method).toContain("14 table schemas");
+  });
+
+  it("handles unknown category names gracefully", () => {
+    const output = makeCheckOutput({
+      checks_run: ["custom_check"],
+      results: {
+        custom_check: { findings: [] },
+      },
+    });
+
+    const summary = extractValidationSummary(output);
+
+    expect(summary.categories.custom_check).toBeDefined();
+    expect(summary.categories.custom_check.label).toBe("Custom_check");
+    expect(summary.categories.custom_check.method).toBe("Static analysis");
+    expect(summary.categories.custom_check.passed).toBe(true);
+  });
+
+  it("handles all known categories", () => {
+    for (const cat of Object.keys(CATEGORY_META)) {
+      const output = makeCheckOutput({
+        checks_run: [cat],
+        results: {
+          [cat]: { findings: [] },
+        },
+      });
+
+      const summary = extractValidationSummary(output);
+      expect(summary.categories[cat]).toBeDefined();
+      expect(summary.categories[cat].passed).toBe(true);
+    }
   });
 });

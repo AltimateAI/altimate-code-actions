@@ -8,6 +8,7 @@ import {
   type AltimateConfigV2,
 } from "./config/schema.js";
 import { isCheckCommandAvailable, runCheckCommand } from "./analysis/cli-check.js";
+import { extractQueryProfile } from "./analysis/query-profile.js";
 import {
   getPRContext,
   getChangedSQLFiles,
@@ -34,6 +35,8 @@ import {
   type SQLIssue,
   type ImpactResult,
   type CostEstimate,
+  type ValidationSummary,
+  type QueryProfile,
 } from "./analysis/types.js";
 
 async function main(): Promise<void> {
@@ -97,9 +100,13 @@ async function main(): Promise<void> {
     }
 
     // Run analyses in parallel where possible
-    const [issues, impact, costEstimates] = await runAnalyses(sqlFiles, prContext, config);
+    const [analysisResult, impact, costEstimates] = await runAnalyses(sqlFiles, prContext, config);
 
+    const { issues, validationSummary } = analysisResult;
     const totalCostDelta = costEstimates.length > 0 ? getTotalCostDelta(costEstimates) : undefined;
+
+    // Extract query profiles from SQL file content
+    const queryProfiles = await extractQueryProfiles(sqlFiles);
 
     const report: ReviewReport = {
       issues,
@@ -112,11 +119,14 @@ async function main(): Promise<void> {
       shouldFail: shouldFail(issues, config.failOn),
       mode: config.mode,
       timestamp: new Date().toISOString(),
+      validationSummary,
+      queryProfiles: queryProfiles.length > 0 ? queryProfiles : undefined,
     };
 
-    // Post comment (skip for fork PRs — write to job summary instead)
+    // Always post comment when files were analyzed (shows validation value
+    // even on clean PRs). Skip only when literally nothing was analyzed.
     let commentUrl: string | undefined;
-    if (report.issuesFound > 0 || report.impact || report.costEstimates) {
+    if (report.filesAnalyzed > 0) {
       if (isForkPR) {
         const { buildComment } = await import("./reporting/comment.js");
         const body = buildComment(report);
@@ -129,7 +139,7 @@ async function main(): Promise<void> {
         commentUrl = await postReviewComment(prContext.prNumber, report, config.commentMode);
       }
     } else {
-      core.info("No findings — skipping PR comment");
+      core.info("No SQL files analyzed — skipping PR comment");
     }
 
     // Set outputs
@@ -154,8 +164,14 @@ async function main(): Promise<void> {
   }
 }
 
+/** Analysis result combining issues with validation metadata. */
+interface AnalysisResult {
+  issues: SQLIssue[];
+  validationSummary?: ValidationSummary;
+}
+
 /**
- * Run all enabled analyses. Returns [issues, impact, costEstimates].
+ * Run all enabled analyses. Returns [analysisResult, impact, costEstimates].
  * Analyses that are disabled return empty arrays / null.
  *
  * When a v2 config is detected and the `altimate-code` CLI supports the
@@ -166,7 +182,7 @@ async function runAnalyses(
   sqlFiles: ReturnType<typeof getChangedSQLFiles>,
   prContext: Awaited<ReturnType<typeof getPRContext>>,
   config: ActionConfig,
-): Promise<[SQLIssue[], ImpactResult | null, CostEstimate[]]> {
+): Promise<[AnalysisResult, ImpactResult | null, CostEstimate[]]> {
   // Always try `altimate-code check` first (deterministic, no LLM).
   // Falls back to regex rules if CLI unavailable.
   const fileConfig = (config as ActionConfig & { fileConfig?: AltimateConfig }).fileConfig;
@@ -175,69 +191,71 @@ async function runAnalyses(
       ? (fileConfig as unknown as AltimateConfigV2)
       : null;
 
-  const promises: [Promise<SQLIssue[]>, Promise<ImpactResult | null>, Promise<CostEstimate[]>] = [
-    // SQL review — try CLI check first, fall back to regex
-    config.sqlReview && (config.mode === "full" || config.mode === "static" || config.mode === "ai")
-      ? runAnalysisWithCLIFallback(sqlFiles, config, v2Config)
-      : Promise.resolve([]),
+  const promises: [Promise<AnalysisResult>, Promise<ImpactResult | null>, Promise<CostEstimate[]>] =
+    [
+      // SQL review — try CLI check first, fall back to regex
+      config.sqlReview &&
+      (config.mode === "full" || config.mode === "static" || config.mode === "ai")
+        ? runAnalysisWithCLIFallback(sqlFiles, config, v2Config)
+        : Promise.resolve({ issues: [] }),
 
-    // Impact analysis
-    (async (): Promise<ImpactResult | null> => {
-      if (!config.impactAnalysis) return null;
+      // Impact analysis
+      (async (): Promise<ImpactResult | null> => {
+        if (!config.impactAnalysis) return null;
 
-      const dbtProjectDir = detectDBTProject(config.dbtProjectDir);
-      if (!dbtProjectDir) return null;
+        const dbtProjectDir = detectDBTProject(config.dbtProjectDir);
+        if (!dbtProjectDir) return null;
 
-      const dbtFiles = getChangedDBTModels(prContext, dbtProjectDir);
-      if (dbtFiles.length === 0) {
-        core.info("No dbt model files changed — skipping impact analysis");
-        return null;
-      }
-
-      const manifest = await getManifest(dbtProjectDir, config.manifestPath);
-      if (manifest) {
-        return analyzeImpact(dbtFiles, manifest, dbtProjectDir);
-      }
-
-      // Fallback: use altimate-code CLI for impact analysis (deterministic, no LLM needed)
-      core.info("No manifest — attempting impact analysis via altimate-code CLI");
-      try {
-        const modelNames = dbtFiles.map(
-          (f) =>
-            f.filename
-              .replace(/\.sql$/, "")
-              .split("/")
-              .pop()!,
-        );
-        const prompt = `Run impact_analysis for the following dbt models: ${modelNames.join(", ")}. Return a JSON object with: modifiedModels (string[]), downstreamModels (string[]), affectedExposures (string[]), affectedTests (string[]), impactScore (number 0-100).`;
-        const result = await runCLI(["run", "--format", "json", "--prompt", prompt], {
-          cwd: dbtProjectDir,
-          timeout: 120_000,
-          env: {},
-        });
-        if (result.json && typeof result.json === "object") {
-          const data = result.json as Record<string, unknown>;
-          return {
-            modifiedModels: (data.modifiedModels as string[]) ?? modelNames,
-            downstreamModels: (data.downstreamModels as string[]) ?? [],
-            affectedExposures: (data.affectedExposures as string[]) ?? [],
-            affectedTests: (data.affectedTests as string[]) ?? [],
-            impactScore: typeof data.impactScore === "number" ? data.impactScore : 0,
-          };
+        const dbtFiles = getChangedDBTModels(prContext, dbtProjectDir);
+        if (dbtFiles.length === 0) {
+          core.info("No dbt model files changed — skipping impact analysis");
+          return null;
         }
-      } catch (err) {
-        core.warning(
-          `CLI impact analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
 
-      core.info("Impact analysis unavailable — no manifest and CLI fallback failed");
-      return null;
-    })(),
+        const manifest = await getManifest(dbtProjectDir, config.manifestPath);
+        if (manifest) {
+          return analyzeImpact(dbtFiles, manifest, dbtProjectDir);
+        }
 
-    // Cost estimation
-    config.costEstimation ? estimateCost(sqlFiles, config) : Promise.resolve([]),
-  ];
+        // Fallback: use altimate-code CLI for impact analysis (deterministic, no LLM needed)
+        core.info("No manifest — attempting impact analysis via altimate-code CLI");
+        try {
+          const modelNames = dbtFiles.map(
+            (f) =>
+              f.filename
+                .replace(/\.sql$/, "")
+                .split("/")
+                .pop()!,
+          );
+          const prompt = `Run impact_analysis for the following dbt models: ${modelNames.join(", ")}. Return a JSON object with: modifiedModels (string[]), downstreamModels (string[]), affectedExposures (string[]), affectedTests (string[]), impactScore (number 0-100).`;
+          const result = await runCLI(["run", "--format", "json", "--prompt", prompt], {
+            cwd: dbtProjectDir,
+            timeout: 120_000,
+            env: {},
+          });
+          if (result.json && typeof result.json === "object") {
+            const data = result.json as Record<string, unknown>;
+            return {
+              modifiedModels: (data.modifiedModels as string[]) ?? modelNames,
+              downstreamModels: (data.downstreamModels as string[]) ?? [],
+              affectedExposures: (data.affectedExposures as string[]) ?? [],
+              affectedTests: (data.affectedTests as string[]) ?? [],
+              impactScore: typeof data.impactScore === "number" ? data.impactScore : 0,
+            };
+          }
+        } catch (err) {
+          core.warning(
+            `CLI impact analysis failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+
+        core.info("Impact analysis unavailable — no manifest and CLI fallback failed");
+        return null;
+      })(),
+
+      // Cost estimation
+      config.costEstimation ? estimateCost(sqlFiles, config) : Promise.resolve([]),
+    ];
 
   return Promise.all(promises);
 }
@@ -255,7 +273,7 @@ async function runAnalysisWithCLIFallback(
   sqlFiles: ReturnType<typeof getChangedSQLFiles>,
   config: ActionConfig,
   v2Config: AltimateConfigV2 | null,
-): Promise<SQLIssue[]> {
+): Promise<AnalysisResult> {
   // Try CLI check
   const cliReady = await isCheckCommandAvailable();
   if (cliReady) {
@@ -264,34 +282,60 @@ async function runAnalysisWithCLIFallback(
       return runV2CheckAnalysis(sqlFiles, v2Config);
     }
     // No v2 config — use default checks (lint + safety)
-    return runCheckCommand(sqlFiles, { checks: ["lint", "safety"] });
+    const result = await runCheckCommand(sqlFiles, { checks: ["lint", "safety"] });
+    return { issues: result.issues, validationSummary: result.validationSummary };
   }
 
   // CLI not available — fall back to regex
   core.info("altimate-code check not available — using regex rule engine");
-  return analyzeSQLFiles(sqlFiles, config);
+  const issues = await analyzeSQLFiles(sqlFiles, config);
+  return { issues };
 }
 
 async function runV2CheckAnalysis(
   sqlFiles: ReturnType<typeof getChangedSQLFiles>,
   v2Config: AltimateConfigV2,
-): Promise<SQLIssue[]> {
+): Promise<AnalysisResult> {
   const cliReady = await isCheckCommandAvailable();
   if (!cliReady) {
     core.warning(
       "v2 config detected but altimate-code CLI unavailable — falling back to built-in rules",
     );
-    return analyzeSQLFiles(sqlFiles, { mode: "static" } as ActionConfig);
+    const issues = await analyzeSQLFiles(sqlFiles, { mode: "static" } as ActionConfig);
+    return { issues };
   }
 
   const options = buildCheckOptionsFromV2(v2Config);
   if (options.checks.length === 0) {
     core.info("All checks disabled in v2 config — skipping");
-    return [];
+    return { issues: [] };
   }
 
   core.info(`Running altimate-code check with: ${options.checks.join(", ")}`);
-  return runCheckCommand(sqlFiles, options);
+  const result = await runCheckCommand(sqlFiles, options);
+  return { issues: result.issues, validationSummary: result.validationSummary };
+}
+
+/**
+ * Extract query profiles from SQL file content. Reads file content from
+ * the working directory and extracts structural metadata.
+ */
+async function extractQueryProfiles(
+  sqlFiles: ReturnType<typeof getChangedSQLFiles>,
+): Promise<QueryProfile[]> {
+  const profiles: QueryProfile[] = [];
+  const fs = await import("fs/promises");
+
+  for (const file of sqlFiles) {
+    try {
+      const content = await fs.readFile(file.filename, "utf-8");
+      profiles.push(extractQueryProfile(file.filename, content));
+    } catch {
+      // File might not exist locally (e.g. deleted file) — skip
+    }
+  }
+
+  return profiles;
 }
 
 /**
