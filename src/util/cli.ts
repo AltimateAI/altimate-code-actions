@@ -22,16 +22,8 @@ interface CLIOptions {
  * parsed JSON. Throws only on spawn failure or timeout — a non-zero exit code
  * is returned in the result so callers can decide how to handle it.
  */
-export async function runCLI(
-  args: string[],
-  options: CLIOptions = {},
-): Promise<CLIResult> {
-  const {
-    env: extraEnv = {},
-    cwd,
-    timeout = DEFAULT_TIMEOUT_MS,
-    parseJson = false,
-  } = options;
+export async function runCLI(args: string[], options: CLIOptions = {}): Promise<CLIResult> {
+  const { env: extraEnv = {}, cwd, timeout = DEFAULT_TIMEOUT_MS, parseJson = false } = options;
 
   const command = "altimate-code";
   core.debug(`Running CLI: ${command} ${args.join(" ")}`);
@@ -54,17 +46,13 @@ export async function runCLI(
       // Give it a moment to die gracefully, then force-kill
       setTimeout(() => child.kill("SIGKILL"), 5000);
       reject(
-        new Error(
-          `altimate-code CLI timed out after ${timeout}ms: ${command} ${args.join(" ")}`,
-        ),
+        new Error(`altimate-code CLI timed out after ${timeout}ms: ${command} ${args.join(" ")}`),
       );
     }, timeout);
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      reject(
-        new Error(`Failed to spawn altimate-code CLI: ${err.message}`),
-      );
+      reject(new Error(`Failed to spawn altimate-code CLI: ${err.message}`));
     });
 
     child.on("close", (code) => {
@@ -95,16 +83,11 @@ export async function runCLI(
  * Run the CLI and require a zero exit code. Throws an error with stderr
  * context on non-zero exit.
  */
-export async function runCLIOrThrow(
-  args: string[],
-  options: CLIOptions = {},
-): Promise<CLIResult> {
+export async function runCLIOrThrow(args: string[], options: CLIOptions = {}): Promise<CLIResult> {
   const result = await runCLI(args, options);
   if (result.exitCode !== 0) {
     const detail = result.stderr.trim() || result.stdout.trim() || "(no output)";
-    throw new Error(
-      `altimate-code exited with code ${result.exitCode}: ${detail}`,
-    );
+    throw new Error(`altimate-code exited with code ${result.exitCode}: ${detail}`);
   }
   return result;
 }

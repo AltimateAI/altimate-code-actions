@@ -31,9 +31,7 @@ export function formatInlineComment(issue: SQLIssue): string {
  * - Capped at 10 comments total
  */
 export function selectInlineIssues(issues: SQLIssue[]): SQLIssue[] {
-  const critical = issues.filter(
-    (i) => i.severity === "critical" || i.severity === "error",
-  );
+  const critical = issues.filter((i) => i.severity === "critical" || i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "warning");
 
   let selected = [...critical];

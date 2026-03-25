@@ -32,9 +32,7 @@ describe("Diff Parser", () => {
     it("extracts added lines correctly", () => {
       const diff = loadDiff("simple-add.diff");
       const result = parseDiff(diff);
-      const addedLines = result[0].hunks[0].lines.filter(
-        (l) => l.type === "add",
-      );
+      const addedLines = result[0].hunks[0].lines.filter((l) => l.type === "add");
 
       expect(addedLines.length).toBeGreaterThan(0);
       // The diff adds "status AS order_status", "total_amount", etc.
@@ -46,9 +44,7 @@ describe("Diff Parser", () => {
     it("extracts removed lines correctly", () => {
       const diff = loadDiff("simple-add.diff");
       const result = parseDiff(diff);
-      const removedLines = result[0].hunks[0].lines.filter(
-        (l) => l.type === "remove",
-      );
+      const removedLines = result[0].hunks[0].lines.filter((l) => l.type === "remove");
 
       expect(removedLines.length).toBeGreaterThan(0);
       const removedContent = removedLines.map((l) => l.content);
@@ -112,9 +108,7 @@ describe("Diff Parser", () => {
       expect(pngFile!.hunks).toHaveLength(0);
 
       // The SQL file in the same diff should still parse correctly
-      const sqlFile = result.find((r) =>
-        r.file === "models/staging/stg_users.sql",
-      );
+      const sqlFile = result.find((r) => r.file === "models/staging/stg_users.sql");
       expect(sqlFile).toBeDefined();
       expect(sqlFile!.hunks.length).toBeGreaterThan(0);
     });

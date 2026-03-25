@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { Severity } from "../../src/analysis/types.js";
-import type {
-  ActionConfig,
-  ReviewMode,
-  CommentMode,
-  FailOn,
+import {
+  Severity,
+  type ActionConfig,
+  type ReviewMode,
+  type CommentMode,
+  type FailOn,
 } from "../../src/analysis/types.js";
 
 /**
@@ -51,7 +51,9 @@ function parseInputs(): ActionConfig {
 
   // Validate model
   if (!VALID_MODELS.includes(model) && !model.startsWith("claude-") && !model.startsWith("gpt-")) {
-    throw new Error(`Invalid model: "${model}". Expected one of: ${VALID_MODELS.join(", ")} or a model starting with "claude-" or "gpt-"`);
+    throw new Error(
+      `Invalid model: "${model}". Expected one of: ${VALID_MODELS.join(", ")} or a model starting with "claude-" or "gpt-"`,
+    );
   }
 
   // Validate severity
@@ -63,9 +65,7 @@ function parseInputs(): ActionConfig {
 
   // Validate mode
   if (!VALID_MODES.includes(mode)) {
-    throw new Error(
-      `Invalid mode: "${mode}". Expected one of: ${VALID_MODES.join(", ")}`,
-    );
+    throw new Error(`Invalid mode: "${mode}". Expected one of: ${VALID_MODES.join(", ")}`);
   }
 
   // Validate comment_mode
@@ -77,9 +77,7 @@ function parseInputs(): ActionConfig {
 
   // Validate fail_on
   if (!VALID_FAIL_ON.includes(failOn)) {
-    throw new Error(
-      `Invalid fail_on: "${failOn}". Expected one of: ${VALID_FAIL_ON.join(", ")}`,
-    );
+    throw new Error(`Invalid fail_on: "${failOn}". Expected one of: ${VALID_FAIL_ON.join(", ")}`);
   }
 
   // Validate max_files
@@ -89,7 +87,10 @@ function parseInputs(): ActionConfig {
 
   const mentionsStr = getInput("mentions");
   const mentions = mentionsStr
-    ? mentionsStr.split(",").map((m) => m.trim()).filter(Boolean)
+    ? mentionsStr
+        .split(",")
+        .map((m) => m.trim())
+        .filter(Boolean)
     : [];
 
   return {
@@ -128,10 +129,23 @@ function clearInputEnv(keys: string[]): void {
 
 describe("Input Parser", () => {
   const allKeys = [
-    "model", "sql_review", "impact_analysis", "cost_estimation",
-    "pii_check", "mode", "interactive", "mentions", "dbt_project_dir",
-    "dbt_version", "manifest_path", "warehouse_type", "use_github_token",
-    "max_files", "severity_threshold", "comment_mode", "fail_on",
+    "model",
+    "sql_review",
+    "impact_analysis",
+    "cost_estimation",
+    "pii_check",
+    "mode",
+    "interactive",
+    "mentions",
+    "dbt_project_dir",
+    "dbt_version",
+    "manifest_path",
+    "warehouse_type",
+    "use_github_token",
+    "max_files",
+    "severity_threshold",
+    "comment_mode",
+    "fail_on",
   ];
 
   beforeEach(() => {

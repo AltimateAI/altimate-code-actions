@@ -143,10 +143,7 @@ sql_review:
 
       const config = loadConfig(path);
 
-      expect(config.sql_review.include).toEqual([
-        "models/**/*.sql",
-        "analyses/**/*.sql",
-      ]);
+      expect(config.sql_review.include).toEqual(["models/**/*.sql", "analyses/**/*.sql"]);
       expect(config.sql_review.exclude).toEqual(["models/legacy/**"]);
     });
 
@@ -309,9 +306,7 @@ comment:
       const merged = mergeWithInputs(baseConfig, {});
 
       expect(merged.dialect).toBe(baseConfig.dialect);
-      expect(merged.sql_review.severity_threshold).toBe(
-        baseConfig.sql_review.severity_threshold,
-      );
+      expect(merged.sql_review.severity_threshold).toBe(baseConfig.sql_review.severity_threshold);
       expect(merged.comment.mode).toBe(baseConfig.comment.mode);
     });
 
@@ -340,10 +335,7 @@ comment:
         include: "models/**/*.sql, analyses/**/*.sql",
       });
 
-      expect(merged.sql_review.include).toEqual([
-        "models/**/*.sql",
-        "analyses/**/*.sql",
-      ]);
+      expect(merged.sql_review.include).toEqual(["models/**/*.sql", "analyses/**/*.sql"]);
     });
 
     it("parses exclude patterns from comma-separated string", () => {
@@ -360,9 +352,7 @@ comment:
       });
 
       // Should keep the original since "catastrophic" is not valid
-      expect(merged.sql_review.severity_threshold).toBe(
-        baseConfig.sql_review.severity_threshold,
-      );
+      expect(merged.sql_review.severity_threshold).toBe(baseConfig.sql_review.severity_threshold);
     });
 
     it("ignores invalid dialect in inputs", () => {
@@ -387,9 +377,7 @@ comment:
       });
 
       expect(baseConfig.dialect).toBe(original.dialect);
-      expect(baseConfig.sql_review.severity_threshold).toBe(
-        original.sql_review.severity_threshold,
-      );
+      expect(baseConfig.sql_review.severity_threshold).toBe(original.sql_review.severity_threshold);
     });
 
     it("inputs take precedence over config file values", () => {

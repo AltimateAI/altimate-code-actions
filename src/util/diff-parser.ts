@@ -47,9 +47,7 @@ export function parseDiff(diffText: string): ParsedDiff[] {
     }
 
     // Hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-    const hunkMatch = line.match(
-      /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/,
-    );
+    const hunkMatch = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
     if (hunkMatch) {
       if (currentHunk) current.hunks.push(currentHunk);
       const oldStart = parseInt(hunkMatch[1], 10);
@@ -144,8 +142,6 @@ export function isSQLFile(filename: string): boolean {
 /** Check if a filename is a dbt model or config file. */
 export function isDBTFile(filename: string): boolean {
   return (
-    isSQLFile(filename) ||
-    /\.(yml|yaml)$/i.test(filename) ||
-    /\.py$/i.test(filename) // Python models in dbt
+    isSQLFile(filename) || /\.(yml|yaml)$/i.test(filename) || /\.py$/i.test(filename) // Python models in dbt
   );
 }

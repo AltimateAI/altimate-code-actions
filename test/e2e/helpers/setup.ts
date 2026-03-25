@@ -84,7 +84,12 @@ export function createMockPRPayload(opts: MockPRPayloadOptions = {}): object {
     title = "Improve SQL queries",
     body = "This PR improves SQL queries in the staging layer.",
     changedFiles = [
-      { filename: "models/staging/stg_orders.sql", status: "modified" as const, additions: 5, deletions: 2 },
+      {
+        filename: "models/staging/stg_orders.sql",
+        status: "modified" as const,
+        additions: 5,
+        deletions: 2,
+      },
     ],
   } = opts;
 
@@ -123,9 +128,7 @@ export function createMockPRPayload(opts: MockPRPayloadOptions = {}): object {
 /**
  * Create a realistic issue_comment webhook payload.
  */
-export function createMockCommentPayload(
-  opts: MockCommentPayloadOptions = {},
-): object {
+export function createMockCommentPayload(opts: MockCommentPayloadOptions = {}): object {
   const {
     owner = "test-owner",
     repo = "test-repo",

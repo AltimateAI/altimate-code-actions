@@ -4,8 +4,7 @@ import {
   selectInlineIssues,
   buildInlineComments,
 } from "../../src/reporting/inline.js";
-import { Severity } from "../../src/analysis/types.js";
-import type { SQLIssue } from "../../src/analysis/types.js";
+import { Severity, type SQLIssue } from "../../src/analysis/types.js";
 
 function makeIssue(overrides: Partial<SQLIssue> = {}): SQLIssue {
   return {
@@ -21,7 +20,11 @@ function makeIssue(overrides: Partial<SQLIssue> = {}): SQLIssue {
 describe("formatInlineComment", () => {
   it("formats a critical issue with the rotating_light icon", () => {
     const result = formatInlineComment(
-      makeIssue({ severity: Severity.Critical, rule: "no-drop-table", message: "DROP TABLE detected" }),
+      makeIssue({
+        severity: Severity.Critical,
+        rule: "no-drop-table",
+        message: "DROP TABLE detected",
+      }),
     );
     expect(result).toContain(":rotating_light:");
     expect(result).toContain("**[no-drop-table] DROP TABLE detected**");
@@ -29,7 +32,11 @@ describe("formatInlineComment", () => {
 
   it("formats an error issue with the x icon", () => {
     const result = formatInlineComment(
-      makeIssue({ severity: Severity.Error, rule: "missing-where", message: "DELETE without WHERE" }),
+      makeIssue({
+        severity: Severity.Error,
+        rule: "missing-where",
+        message: "DELETE without WHERE",
+      }),
     );
     expect(result).toContain(":x:");
     expect(result).toContain("**[missing-where] DELETE without WHERE**");
@@ -47,9 +54,7 @@ describe("formatInlineComment", () => {
   });
 
   it("includes a suggestion when provided", () => {
-    const result = formatInlineComment(
-      makeIssue({ suggestion: "List columns explicitly" }),
-    );
+    const result = formatInlineComment(makeIssue({ suggestion: "List columns explicitly" }));
     expect(result).toContain(":bulb: **Suggestion:** List columns explicitly");
   });
 

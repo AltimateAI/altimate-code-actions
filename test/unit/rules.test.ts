@@ -2,8 +2,9 @@ import { describe, it, expect } from "bun:test";
 import {
   RuleRegistry,
   createRegistry,
+  type Rule,
+  type RuleCategory,
 } from "../../src/analysis/rules.js";
-import type { Rule, RuleCategory } from "../../src/analysis/rules.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import { Severity } from "../../src/analysis/types.js";
 import type { AltimateConfig } from "../../src/config/schema.js";
@@ -252,9 +253,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT a.id FROM orders a, customers b";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const cartesianIssues = issues.filter(
-          (i) => i.rule === "cartesian_join",
-        );
+        const cartesianIssues = issues.filter((i) => i.rule === "cartesian_join");
 
         expect(cartesianIssues.length).toBeGreaterThan(0);
         expect(cartesianIssues[0].suggestion).toBeTruthy();
@@ -263,13 +262,10 @@ describe("Rule Registry", () => {
       it("does not flag explicit JOIN", () => {
         const registry = new RuleRegistry();
         const config = makeConfig();
-        const sql =
-          "SELECT a.id FROM orders a JOIN customers b ON a.customer_id = b.id";
+        const sql = "SELECT a.id FROM orders a JOIN customers b ON a.customer_id = b.id";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const cartesianIssues = issues.filter(
-          (i) => i.rule === "cartesian_join",
-        );
+        const cartesianIssues = issues.filter((i) => i.rule === "cartesian_join");
 
         expect(cartesianIssues.length).toBe(0);
       });
@@ -307,9 +303,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT id, name FROM users ORDER BY 1";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const ordinalIssues = issues.filter(
-          (i) => i.rule === "order_by_ordinal",
-        );
+        const ordinalIssues = issues.filter((i) => i.rule === "order_by_ordinal");
 
         expect(ordinalIssues.length).toBeGreaterThan(0);
         expect(ordinalIssues[0].suggestion).toBeTruthy();
@@ -321,9 +315,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT id, name FROM users ORDER BY name";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const ordinalIssues = issues.filter(
-          (i) => i.rule === "order_by_ordinal",
-        );
+        const ordinalIssues = issues.filter((i) => i.rule === "order_by_ordinal");
 
         expect(ordinalIssues.length).toBe(0);
       });
@@ -336,9 +328,7 @@ describe("Rule Registry", () => {
         const sql = "DELETE FROM users;";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const whereIssues = issues.filter(
-          (i) => i.rule === "missing_where_clause",
-        );
+        const whereIssues = issues.filter((i) => i.rule === "missing_where_clause");
 
         expect(whereIssues.length).toBeGreaterThan(0);
         expect(whereIssues[0].message).toContain("DELETE");
@@ -351,9 +341,7 @@ describe("Rule Registry", () => {
         const sql = "DELETE FROM users WHERE id = 1;";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const whereIssues = issues.filter(
-          (i) => i.rule === "missing_where_clause",
-        );
+        const whereIssues = issues.filter((i) => i.rule === "missing_where_clause");
 
         expect(whereIssues.length).toBe(0);
       });
@@ -364,9 +352,7 @@ describe("Rule Registry", () => {
         const sql = "UPDATE users SET status = 'inactive';";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const whereIssues = issues.filter(
-          (i) => i.rule === "missing_where_clause",
-        );
+        const whereIssues = issues.filter((i) => i.rule === "missing_where_clause");
 
         expect(whereIssues.length).toBeGreaterThan(0);
         expect(whereIssues[0].message).toContain("UPDATE");
@@ -377,13 +363,10 @@ describe("Rule Registry", () => {
       it("detects UNION without ALL", () => {
         const registry = new RuleRegistry();
         const config = makeInfoConfig();
-        const sql =
-          "SELECT id FROM a\nUNION\nSELECT id FROM b";
+        const sql = "SELECT id FROM a\nUNION\nSELECT id FROM b";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const unionIssues = issues.filter(
-          (i) => i.rule === "union_without_all",
-        );
+        const unionIssues = issues.filter((i) => i.rule === "union_without_all");
 
         expect(unionIssues.length).toBeGreaterThan(0);
         expect(unionIssues[0].suggestion).toBeTruthy();
@@ -392,13 +375,10 @@ describe("Rule Registry", () => {
       it("does not flag UNION ALL", () => {
         const registry = new RuleRegistry();
         const config = makeInfoConfig();
-        const sql =
-          "SELECT id FROM a\nUNION ALL\nSELECT id FROM b";
+        const sql = "SELECT id FROM a\nUNION ALL\nSELECT id FROM b";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const unionIssues = issues.filter(
-          (i) => i.rule === "union_without_all",
-        );
+        const unionIssues = issues.filter((i) => i.rule === "union_without_all");
 
         expect(unionIssues.length).toBe(0);
       });
@@ -411,9 +391,7 @@ describe("Rule Registry", () => {
         const sql = "WHERE name LIKE '%smith'";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const likeIssues = issues.filter(
-          (i) => i.rule === "leading_wildcard_like",
-        );
+        const likeIssues = issues.filter((i) => i.rule === "leading_wildcard_like");
 
         expect(likeIssues.length).toBeGreaterThan(0);
         expect(likeIssues[0].suggestion).toBeTruthy();
@@ -425,9 +403,7 @@ describe("Rule Registry", () => {
         const sql = "WHERE name LIKE 'smith%'";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const likeIssues = issues.filter(
-          (i) => i.rule === "leading_wildcard_like",
-        );
+        const likeIssues = issues.filter((i) => i.rule === "leading_wildcard_like");
 
         expect(likeIssues.length).toBe(0);
       });
@@ -444,9 +420,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT id FROM users WHERE UPPER(name) = 'ALICE'";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const fnIssues = issues.filter(
-          (i) => i.rule === "function_on_indexed_column",
-        );
+        const fnIssues = issues.filter((i) => i.rule === "function_on_indexed_column");
 
         expect(fnIssues.length).toBeGreaterThan(0);
         expect(fnIssues[0].suggestion).toBeTruthy();
@@ -458,9 +432,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT * FROM orders WHERE YEAR(order_date) = 2024";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const fnIssues = issues.filter(
-          (i) => i.rule === "function_on_indexed_column",
-        );
+        const fnIssues = issues.filter((i) => i.rule === "function_on_indexed_column");
 
         expect(fnIssues.length).toBeGreaterThan(0);
       });
@@ -471,9 +443,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT id FROM users WHERE CAST(age AS VARCHAR) = '30'";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const fnIssues = issues.filter(
-          (i) => i.rule === "function_on_indexed_column",
-        );
+        const fnIssues = issues.filter((i) => i.rule === "function_on_indexed_column");
 
         expect(fnIssues.length).toBeGreaterThan(0);
       });
@@ -484,9 +454,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT UPPER(name) AS upper_name FROM users";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const fnIssues = issues.filter(
-          (i) => i.rule === "function_on_indexed_column",
-        );
+        const fnIssues = issues.filter((i) => i.rule === "function_on_indexed_column");
 
         expect(fnIssues.length).toBe(0);
       });
@@ -496,12 +464,11 @@ describe("Rule Registry", () => {
       it("detects NOT IN with subquery", () => {
         const registry = new RuleRegistry();
         const config = makeConfig();
-        const sql = "SELECT id FROM customers WHERE customer_id NOT IN (SELECT customer_id FROM orders)";
+        const sql =
+          "SELECT id FROM customers WHERE customer_id NOT IN (SELECT customer_id FROM orders)";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const niIssues = issues.filter(
-          (i) => i.rule === "not_in_with_nulls",
-        );
+        const niIssues = issues.filter((i) => i.rule === "not_in_with_nulls");
 
         expect(niIssues.length).toBeGreaterThan(0);
         expect(niIssues[0].suggestion).toBeTruthy();
@@ -513,9 +480,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT id FROM users WHERE status NOT IN ('active', 'pending')";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const niIssues = issues.filter(
-          (i) => i.rule === "not_in_with_nulls",
-        );
+        const niIssues = issues.filter((i) => i.rule === "not_in_with_nulls");
 
         expect(niIssues.length).toBe(0);
       });
@@ -533,9 +498,7 @@ describe("Rule Registry", () => {
         ].join("\n");
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const distinctIssues = issues.filter(
-          (i) => i.rule === "distinct_masking_bad_join",
-        );
+        const distinctIssues = issues.filter((i) => i.rule === "distinct_masking_bad_join");
 
         expect(distinctIssues.length).toBeGreaterThan(0);
         expect(distinctIssues[0].suggestion).toBeTruthy();
@@ -547,9 +510,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT DISTINCT status FROM orders";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const distinctIssues = issues.filter(
-          (i) => i.rule === "distinct_masking_bad_join",
-        );
+        const distinctIssues = issues.filter((i) => i.rule === "distinct_masking_bad_join");
 
         expect(distinctIssues.length).toBe(0);
       });
@@ -560,9 +521,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT o.id FROM orders o JOIN customers c ON o.customer_id = c.id";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const distinctIssues = issues.filter(
-          (i) => i.rule === "distinct_masking_bad_join",
-        );
+        const distinctIssues = issues.filter((i) => i.rule === "distinct_masking_bad_join");
 
         expect(distinctIssues.length).toBe(0);
       });
@@ -572,12 +531,11 @@ describe("Rule Registry", () => {
       it("detects COUNT(*) > 0", () => {
         const registry = new RuleRegistry();
         const config = makeConfig();
-        const sql = "SELECT department FROM departments d WHERE (SELECT COUNT(*) FROM employees e WHERE e.dept_id = d.id) > 0";
+        const sql =
+          "SELECT department FROM departments d WHERE (SELECT COUNT(*) FROM employees e WHERE e.dept_id = d.id) > 0";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const countIssues = issues.filter(
-          (i) => i.rule === "count_for_existence",
-        );
+        const countIssues = issues.filter((i) => i.rule === "count_for_existence");
 
         expect(countIssues.length).toBeGreaterThan(0);
         expect(countIssues[0].suggestion).toBeTruthy();
@@ -589,9 +547,7 @@ describe("Rule Registry", () => {
         const sql = "SELECT department, COUNT(*) AS cnt FROM employees GROUP BY department";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const countIssues = issues.filter(
-          (i) => i.rule === "count_for_existence",
-        );
+        const countIssues = issues.filter((i) => i.rule === "count_for_existence");
 
         expect(countIssues.length).toBe(0);
       });
@@ -604,9 +560,7 @@ describe("Rule Registry", () => {
         const sql = "DELETE FROM event_logs WHERE created_at < '2023-01-01';";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const deleteIssues = issues.filter(
-          (i) => i.rule === "no_limit_on_delete",
-        );
+        const deleteIssues = issues.filter((i) => i.rule === "no_limit_on_delete");
 
         expect(deleteIssues.length).toBeGreaterThan(0);
         expect(deleteIssues[0].suggestion).toBeTruthy();
@@ -618,9 +572,7 @@ describe("Rule Registry", () => {
         const sql = "DELETE FROM event_logs WHERE created_at < '2023-01-01' LIMIT 10000;";
 
         const issues = registry.analyze(sql, "test.sql", config);
-        const deleteIssues = issues.filter(
-          (i) => i.rule === "no_limit_on_delete",
-        );
+        const deleteIssues = issues.filter((i) => i.rule === "no_limit_on_delete");
 
         expect(deleteIssues.length).toBe(0);
       });
@@ -733,9 +685,7 @@ describe("Rule Registry", () => {
       const registry = createRegistry(config);
       const sql = "TRUNCATE TABLE users;";
       const issues = registry.analyze(sql, "test.sql", config);
-      const truncateIssues = issues.filter(
-        (i) => i.rule === "custom_no_truncate",
-      );
+      const truncateIssues = issues.filter((i) => i.rule === "custom_no_truncate");
 
       expect(truncateIssues.length).toBeGreaterThan(0);
       expect(truncateIssues[0].severity).toBe(Severity.Critical);

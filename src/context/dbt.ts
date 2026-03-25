@@ -3,11 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import type {
-  ChangedFile,
-  DBTManifest,
-  DBTManifestNode,
-} from "../analysis/types.js";
+import type { ChangedFile, DBTManifest, DBTManifestNode } from "../analysis/types.js";
 
 /**
  * Detect the dbt project root by searching for dbt_project.yml.
@@ -28,9 +24,7 @@ export function detectDBTProject(explicitDir?: string): string | undefined {
       core.info(`dbt project found at explicit path: ${resolved}`);
       return resolved;
     }
-    core.warning(
-      `dbt_project.yml not found at specified path: ${resolved}`,
-    );
+    core.warning(`dbt_project.yml not found at specified path: ${resolved}`);
     return undefined;
   }
 
@@ -65,8 +59,7 @@ export async function getManifest(
   dbtProjectDir: string,
   explicitManifestPath?: string,
 ): Promise<DBTManifest | undefined> {
-  const manifestPath =
-    explicitManifestPath ?? join(dbtProjectDir, "target", "manifest.json");
+  const manifestPath = explicitManifestPath ?? join(dbtProjectDir, "target", "manifest.json");
 
   // Try reading existing manifest first
   if (existsSync(manifestPath)) {
@@ -99,9 +92,7 @@ export async function getManifest(
     );
   }
 
-  core.warning(
-    "No dbt manifest available — impact analysis will be limited",
-  );
+  core.warning("No dbt manifest available — impact analysis will be limited");
   return undefined;
 }
 
@@ -120,9 +111,7 @@ async function parseManifestFile(path: string): Promise<DBTManifest> {
 
   const nodeCount = Object.keys(nodes).length;
   const sourceCount = Object.keys(sources).length;
-  core.info(
-    `Manifest loaded: ${nodeCount} node(s), ${sourceCount} source(s)`,
-  );
+  core.info(`Manifest loaded: ${nodeCount} node(s), ${sourceCount} source(s)`);
 
   return { nodes, sources, exposures, childMap, parentMap };
 }
@@ -142,8 +131,7 @@ export function getModifiedModels(
   // Build a lookup from relative file path to unique_id
   const pathToId = new Map<string, string>();
   for (const [uniqueId, node] of Object.entries(manifest.nodes)) {
-    const filePath =
-      node.original_file_path ?? node.path;
+    const filePath = node.original_file_path ?? node.path;
     if (filePath) {
       pathToId.set(filePath, uniqueId);
     }
@@ -163,9 +151,7 @@ export function getModifiedModels(
     }
   }
 
-  core.info(
-    `Mapped ${changedFiles.length} changed file(s) to ${modelIds.length} dbt model(s)`,
-  );
+  core.info(`Mapped ${changedFiles.length} changed file(s) to ${modelIds.length} dbt model(s)`);
   return modelIds;
 }
 
@@ -173,10 +159,7 @@ export function getModifiedModels(
  * Walk the child_map to find all downstream nodes of the given model IDs.
  * Returns a deduplicated list of downstream unique IDs (excluding the input models).
  */
-export function getDownstreamModels(
-  modelIds: string[],
-  manifest: DBTManifest,
-): string[] {
+export function getDownstreamModels(modelIds: string[], manifest: DBTManifest): string[] {
   const visited = new Set<string>(modelIds);
   const queue = [...modelIds];
   const downstream: string[] = [];
@@ -222,10 +205,7 @@ export function getAffectedExposures(
 /**
  * Find tests that reference any of the given model IDs.
  */
-export function getAffectedTests(
-  modelIds: string[],
-  manifest: DBTManifest,
-): string[] {
+export function getAffectedTests(modelIds: string[], manifest: DBTManifest): string[] {
   const modelSet = new Set(modelIds);
   const tests: string[] = [];
 

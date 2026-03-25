@@ -13,12 +13,7 @@ export interface ParsedCommand {
   raw: string;
 }
 
-const KNOWN_COMMANDS = new Set<CommandName>([
-  "review",
-  "impact",
-  "cost",
-  "help",
-]);
+const KNOWN_COMMANDS = new Set<CommandName>(["review", "impact", "cost", "help"]);
 
 /**
  * Parse an interactive command from a PR comment body.
@@ -29,10 +24,7 @@ const KNOWN_COMMANDS = new Set<CommandName>([
  *
  * Returns `null` if the comment does not start with any of the triggers.
  */
-export function parseCommand(
-  commentBody: string,
-  mentions: string[],
-): ParsedCommand | null {
+export function parseCommand(commentBody: string, mentions: string[]): ParsedCommand | null {
   const trimmed = commentBody.trim();
   const lower = trimmed.toLowerCase();
 
@@ -66,8 +58,7 @@ export function parseCommand(
 
   if (KNOWN_COMMANDS.has(commandToken as CommandName)) {
     const command = commandToken as CommandName;
-    const file =
-      command === "review" && args.length > 0 ? args[0] : undefined;
+    const file = command === "review" && args.length > 0 ? args[0] : undefined;
 
     return {
       command,

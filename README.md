@@ -19,16 +19,47 @@
 
 Altimate Code Actions brings production-grade SQL analysis, dbt impact assessment, query cost estimation, and PII detection directly into your GitHub pull request workflow. Every SQL change gets reviewed automatically before it merges.
 
+## Powered by altimate-code
+
+With `version: 2` in your `.altimate.yml`, the action delegates all static checks to the [`altimate-code`](https://github.com/AltimateAI/altimate-code) CLI. This unlocks 40+ capabilities across 7 check categories:
+
+| Category | Checks | Description |
+|----------|--------|-------------|
+| **Lint** | 26 rules (L001-L026) | AST-level SQL anti-pattern detection |
+| **Validate** | SQL parsing | DataFusion-based syntax validation |
+| **Safety** | Injection, destructive ops | SQL injection vectors, privilege escalation |
+| **Policy** | Custom guardrails | Block patterns, require standards, enforce governance |
+| **PII** | 15 categories | Column, literal, and comment scanning |
+| **Semantic** | Schema-aware | Join correctness, type mismatches, missing columns |
+| **Grade** | Quality scoring | Letter grades (A-F) per file |
+
+V2 is fully backward compatible. If the CLI is not installed, the action falls back to built-in regex rules automatically.
+
+```yaml
+# Quick start with v2
+version: 2
+checks:
+  lint:
+    enabled: true
+  safety:
+    enabled: true
+  validate:
+    enabled: true
+```
+
+See [V2 Configuration Reference](docs/configuration.md#v2-configuration-reference) and [Migration Guide](docs/v2-migration.md) for details.
+
 ## What It Does
 
 | | Capability | Description |
 |---|---|---|
 | :zap: | **Executive Summary** | One-line scope, impact, cost, and severity overview at the top of every review |
-| :mag: | **SQL Quality Analysis** | Detects anti-patterns, performance issues, and correctness bugs across 19 rule categories |
+| :mag: | **SQL Quality Analysis** | 26 lint rules + safety + validation + policy enforcement (v2) or 19 regex rules (v1) |
 | :deciduous_tree: | **dbt Impact Analysis** | Maps changed models to downstream dependencies, exposures, and tests in your dbt DAG |
 | :world_map: | **Mermaid DAG Visualization** | Colored dependency graph rendered inline using GitHub-native Mermaid |
 | :moneybag: | **Cost Estimation** | Estimates query cost deltas so you catch expensive changes before they hit production |
 | :shield: | **PII Detection** | Identifies personally identifiable information across 15 categories to prevent data leaks |
+| :lock: | **Policy Enforcement** | Custom organizational guardrails via `.altimate-policy.yml` (v2) |
 | :speech_balloon: | **Inline Comments** | Critical issues posted directly on diff lines for faster triage |
 | :video_game: | **Interactive Commands** | `@altimate review`, `@altimate impact`, `@altimate cost`, `@altimate help` in PR comments |
 
@@ -197,15 +228,20 @@ Configure trigger phrases with the `mentions` input (default: `@altimate,/altima
 
 ## What Altimate Adds Beyond dbt Cloud
 
-| Feature | dbt Cloud CI | Altimate Code |
-|---------|-------------|---------------|
-| Slim CI (build changed models) | Yes | No (use dbt Cloud for this) |
-| SQL anti-pattern detection | No | Yes (19 rules) |
-| Impact blast radius in PR | Limited | Yes (full DAG visualization) |
-| Query cost estimation | No | Yes (Snowflake, BigQuery) |
-| PII detection | No | Yes (15 categories) |
-| Schema breaking changes | No | Yes |
-| AI-powered review | No | Yes |
+| Feature | dbt Cloud CI | Altimate Code (v1) | Altimate Code (v2) |
+|---------|-------------|-------------------|-------------------|
+| Slim CI (build changed models) | Yes | No (use dbt Cloud) | No (use dbt Cloud) |
+| SQL anti-pattern detection | No | 19 regex rules | 26 AST-level lint rules |
+| SQL syntax validation | No | No | Yes (DataFusion) |
+| SQL injection detection | No | No | Yes |
+| Policy enforcement | No | No | Yes (custom guardrails) |
+| Impact blast radius in PR | Limited | Full DAG visualization | Full DAG visualization |
+| Query cost estimation | No | Yes (Snowflake, BigQuery) | Yes (Snowflake, BigQuery) |
+| PII detection | No | 15 categories (regex) | 15 categories (AST-aware) |
+| Semantic analysis | No | No | Yes (schema-aware) |
+| SQL quality grading | No | No | Yes (A-F grades) |
+| Schema breaking changes | No | Yes | Yes |
+| AI-powered review | No | Yes | Yes |
 
 Altimate Code Actions and dbt Cloud CI are complementary. Use dbt Cloud for build/test orchestration and slim CI, and Altimate for deep SQL quality analysis, cost estimation, and PII detection on every pull request.
 

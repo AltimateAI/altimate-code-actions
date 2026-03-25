@@ -1,11 +1,11 @@
 import { describe, it, expect } from "bun:test";
-import type {
-  ReviewReport,
-  SQLIssue,
-  ImpactResult,
-  CostEstimate,
+import {
+  Severity,
+  type ReviewReport,
+  type SQLIssue,
+  type ImpactResult,
+  type CostEstimate,
 } from "../../src/analysis/types.js";
-import { Severity } from "../../src/analysis/types.js";
 import {
   buildComment,
   buildASCIIDAG,
@@ -510,9 +510,7 @@ describe("Comment Builder v0.3", () => {
     });
 
     it("wraps warnings in collapsible details", () => {
-      const issues: SQLIssue[] = [
-        makeIssue({ severity: Severity.Warning }),
-      ];
+      const issues: SQLIssue[] = [makeIssue({ severity: Severity.Warning })];
       const section = buildIssuesSection(issues);
 
       expect(section).toContain("<details>");
@@ -541,9 +539,7 @@ describe("Comment Builder v0.3", () => {
     });
 
     it("shows dash for Fix when no suggestion provided", () => {
-      const issues: SQLIssue[] = [
-        makeIssue({ severity: Severity.Warning }),
-      ];
+      const issues: SQLIssue[] = [makeIssue({ severity: Severity.Warning })];
       const section = buildIssuesSection(issues);
 
       expect(section).toMatch(/\| - \|$/m);
@@ -585,9 +581,7 @@ describe("Comment Builder v0.3", () => {
       expect(section).toContain("\u26A0\uFE0F 1 warning");
 
       // Critical before warning
-      expect(section.indexOf("critical_msg")).toBeLessThan(
-        section.indexOf("warning_msg"),
-      );
+      expect(section.indexOf("critical_msg")).toBeLessThan(section.indexOf("warning_msg"));
     });
   });
 
@@ -635,9 +629,7 @@ describe("Comment Builder v0.3", () => {
     });
 
     it("is collapsible", () => {
-      const estimates: CostEstimate[] = [
-        { file: "a.sql", costDelta: 1.0, currency: "USD" },
-      ];
+      const estimates: CostEstimate[] = [{ file: "a.sql", costDelta: 1.0, currency: "USD" }];
       const section = buildCostSection(estimates);
 
       expect(section).toContain("<details>");
@@ -665,9 +657,7 @@ describe("Comment Builder v0.3", () => {
     });
 
     it("shows dash for cause when no explanation provided", () => {
-      const estimates: CostEstimate[] = [
-        { file: "a.sql", costDelta: 1.0, currency: "USD" },
-      ];
+      const estimates: CostEstimate[] = [{ file: "a.sql", costDelta: 1.0, currency: "USD" }];
       const section = buildCostSection(estimates);
 
       expect(section).toMatch(/\| - \|$/m);
@@ -699,11 +689,7 @@ describe("Comment Builder v0.3", () => {
     });
 
     it("renders multiple children with tree branches", () => {
-      const dag = buildASCIIDAG(
-        ["stg_orders"],
-        ["fct_revenue", "dim_customers"],
-        dummyImpact,
-      );
+      const dag = buildASCIIDAG(["stg_orders"], ["fct_revenue", "dim_customers"], dummyImpact);
       expect(dag).toContain("\u252C"); // ┬
       expect(dag).toContain("\u2514"); // └
       expect(dag).toContain("fct_revenue");
@@ -713,6 +699,69 @@ describe("Comment Builder v0.3", () => {
     it("renders model name alone when no children", () => {
       const dag = buildASCIIDAG(["stg_orders"], [], dummyImpact);
       expect(dag).toBe("stg_orders");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // buildIssuesSection — category grouping (CLI check output)
+  // ---------------------------------------------------------------------------
+
+  describe("buildIssuesSection category grouping", () => {
+    it("groups issues by rule prefix into subsections", () => {
+      const issues: SQLIssue[] = [
+        makeIssue({ rule: "lint/L001", severity: Severity.Warning, message: "SELECT *" }),
+        makeIssue({ rule: "lint/L003", severity: Severity.Info, message: "ORDER BY ordinal" }),
+        makeIssue({
+          rule: "safety/injection",
+          severity: Severity.Critical,
+          message: "SQL injection",
+        }),
+        makeIssue({ rule: "pii/email", severity: Severity.Warning, message: "PII detected" }),
+      ];
+      const section = buildIssuesSection(issues);
+
+      // Should have category subsection headers
+      expect(section).toContain("#### Lint");
+      expect(section).toContain("#### Safety");
+      expect(section).toContain("#### PII");
+    });
+
+    it("skips category headers when all issues are from the same source", () => {
+      const issues: SQLIssue[] = [
+        makeIssue({ severity: Severity.Warning, message: "warn1" }),
+        makeIssue({ severity: Severity.Info, message: "info1" }),
+      ];
+      const section = buildIssuesSection(issues);
+
+      // No category prefix => no subsection headers
+      expect(section).not.toContain("####");
+    });
+
+    it("renders Lint before Safety before PII", () => {
+      const issues: SQLIssue[] = [
+        makeIssue({ rule: "pii/email", severity: Severity.Warning, message: "pii_msg" }),
+        makeIssue({ rule: "lint/L001", severity: Severity.Warning, message: "lint_msg" }),
+        makeIssue({ rule: "safety/injection", severity: Severity.Warning, message: "safety_msg" }),
+      ];
+      const section = buildIssuesSection(issues);
+
+      const lintIdx = section.indexOf("#### Lint");
+      const safetyIdx = section.indexOf("#### Safety");
+      const piiIdx = section.indexOf("#### PII");
+
+      expect(lintIdx).toBeLessThan(safetyIdx);
+      expect(safetyIdx).toBeLessThan(piiIdx);
+    });
+
+    it("handles mix of prefixed and unprefixed rules", () => {
+      const issues: SQLIssue[] = [
+        makeIssue({ rule: "lint/L001", severity: Severity.Warning, message: "lint issue" }),
+        makeIssue({ severity: Severity.Warning, message: "regex issue" }),
+      ];
+      const section = buildIssuesSection(issues);
+
+      expect(section).toContain("#### Lint");
+      expect(section).toContain("#### SQL Quality");
     });
   });
 

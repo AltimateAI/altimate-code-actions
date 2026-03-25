@@ -3,11 +3,10 @@ import * as github from "@actions/github";
 
 import type { ParsedCommand } from "./commands.js";
 import type { ActionConfig } from "../analysis/types.js";
-import { getPRContext, getChangedSQLFiles } from "../context/pr.js";
+import { getPRContext, getChangedSQLFiles, getChangedDBTModels } from "../context/pr.js";
 import { analyzeSQLFiles } from "../analysis/sql-review.js";
 import { analyzeImpact } from "../analysis/impact.js";
 import { detectDBTProject, getManifest } from "../context/dbt.js";
-import { getChangedDBTModels } from "../context/pr.js";
 import { estimateCost, getTotalCostDelta } from "../analysis/cost.js";
 import { getOctokit, getRepo } from "../util/octokit.js";
 
@@ -86,10 +85,7 @@ async function handleReview(
   const issues = await analyzeSQLFiles(sqlFiles, config);
 
   if (issues.length === 0) {
-    await postNewComment(
-      prNumber,
-      `No issues found across ${sqlFiles.length} SQL file(s).`,
-    );
+    await postNewComment(prNumber, `No issues found across ${sqlFiles.length} SQL file(s).`);
     return;
   }
 
@@ -108,10 +104,7 @@ async function handleReview(
   }
 }
 
-async function handleImpact(
-  prNumber: number,
-  config: ActionConfig,
-): Promise<void> {
+async function handleImpact(prNumber: number, config: ActionConfig): Promise<void> {
   const dbtProjectDir = detectDBTProject(config.dbtProjectDir);
   if (!dbtProjectDir) {
     await postNewComment(
@@ -124,10 +117,7 @@ async function handleImpact(
   const prContext = await getPRContext();
   const dbtFiles = getChangedDBTModels(prContext, dbtProjectDir);
   if (dbtFiles.length === 0) {
-    await postNewComment(
-      prNumber,
-      "No dbt model files changed in this PR.",
-    );
+    await postNewComment(prNumber, "No dbt model files changed in this PR.");
     return;
   }
 
@@ -154,10 +144,7 @@ async function handleImpact(
   await postNewComment(prNumber, lines.join("\n"));
 }
 
-async function handleCost(
-  prNumber: number,
-  config: ActionConfig,
-): Promise<void> {
+async function handleCost(prNumber: number, config: ActionConfig): Promise<void> {
   const prContext = await getPRContext();
   const sqlFiles = getChangedSQLFiles(prContext, config.maxFiles);
 
@@ -182,8 +169,7 @@ async function handleCost(
     "| File | Delta |",
     "|:-----|------:|",
     ...estimates.map(
-      (e) =>
-        `| \`${e.file}\` | ${e.costDelta >= 0 ? "+" : ""}$${e.costDelta.toFixed(2)} |`,
+      (e) => `| \`${e.file}\` | ${e.costDelta >= 0 ? "+" : ""}$${e.costDelta.toFixed(2)} |`,
     ),
   ];
   await postNewComment(prNumber, lines.join("\n"));
@@ -218,10 +204,7 @@ async function addReaction(
 /**
  * Post a new comment on the PR (not updating the sticky summary comment).
  */
-async function postNewComment(
-  prNumber: number,
-  body: string,
-): Promise<string> {
+async function postNewComment(prNumber: number, body: string): Promise<string> {
   const octokit = getOctokit();
   const { owner, repo } = getRepo();
 

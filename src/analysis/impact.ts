@@ -5,11 +5,7 @@ import {
   getAffectedExposures,
   getAffectedTests,
 } from "../context/dbt.js";
-import type {
-  ChangedFile,
-  DBTManifest,
-  ImpactResult,
-} from "./types.js";
+import type { ChangedFile, DBTManifest, ImpactResult } from "./types.js";
 
 /**
  * Analyze the impact of changed dbt models on the DAG.
@@ -23,11 +19,7 @@ export async function analyzeImpact(
   manifest: DBTManifest,
   dbtProjectDir: string,
 ): Promise<ImpactResult> {
-  const modifiedModelIds = getModifiedModels(
-    changedFiles,
-    manifest,
-    dbtProjectDir,
-  );
+  const modifiedModelIds = getModifiedModels(changedFiles, manifest, dbtProjectDir);
 
   if (modifiedModelIds.length === 0) {
     core.info("No dbt models matched the changed files — skipping impact analysis");
@@ -53,11 +45,7 @@ export async function analyzeImpact(
     return node?.name ?? id.split(".").pop() ?? id;
   });
 
-  const exposureIds = getAffectedExposures(
-    modifiedModelIds,
-    downstreamIds,
-    manifest,
-  );
+  const exposureIds = getAffectedExposures(modifiedModelIds, downstreamIds, manifest);
   const exposureNames = exposureIds.map((id) => {
     const node = manifest.exposures[id];
     return node?.name ?? id.split(".").pop() ?? id;
@@ -106,8 +94,7 @@ function computeImpactScore(
 ): number {
   if (totalNodes === 0) return 0;
 
-  const affectedRatio =
-    (modifiedCount + downstreamCount) / totalNodes;
+  const affectedRatio = (modifiedCount + downstreamCount) / totalNodes;
 
   // Downstream ratio contributes 0-50
   const downstreamScore = Math.min(50, Math.round(affectedRatio * 100));

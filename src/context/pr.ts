@@ -1,11 +1,6 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import {
-  getChangedFiles,
-  getPRNumber,
-  getHeadSHA,
-  getBaseRef,
-} from "../util/octokit.js";
+import { getChangedFiles, getPRNumber, getHeadSHA, getBaseRef } from "../util/octokit.js";
 import { isSQLFile, isDBTFile } from "../util/diff-parser.js";
 import type { ChangedFile } from "../analysis/types.js";
 
@@ -53,16 +48,10 @@ export async function getPRContext(): Promise<PRContext> {
   const changedFiles = await getChangedFiles(prNumber);
   core.info(`PR has ${changedFiles.length} changed file(s)`);
 
-  const sqlFiles = changedFiles.filter(
-    (f) => f.status !== "removed" && isSQLFile(f.filename),
-  );
-  const dbtFiles = changedFiles.filter(
-    (f) => f.status !== "removed" && isDBTFile(f.filename),
-  );
+  const sqlFiles = changedFiles.filter((f) => f.status !== "removed" && isSQLFile(f.filename));
+  const dbtFiles = changedFiles.filter((f) => f.status !== "removed" && isDBTFile(f.filename));
 
-  core.info(
-    `Found ${sqlFiles.length} SQL file(s) and ${dbtFiles.length} dbt-related file(s)`,
-  );
+  core.info(`Found ${sqlFiles.length} SQL file(s) and ${dbtFiles.length} dbt-related file(s)`);
 
   return {
     prNumber,
@@ -82,10 +71,7 @@ export async function getPRContext(): Promise<PRContext> {
  * Files are sorted by additions descending so the most-changed files are
  * analyzed first if the limit is hit.
  */
-export function getChangedSQLFiles(
-  ctx: PRContext,
-  maxFiles: number,
-): ChangedFile[] {
+export function getChangedSQLFiles(ctx: PRContext, maxFiles: number): ChangedFile[] {
   const sorted = [...ctx.sqlFiles].sort((a, b) => b.additions - a.additions);
   if (maxFiles > 0 && sorted.length > maxFiles) {
     core.warning(
@@ -102,10 +88,7 @@ export function getChangedSQLFiles(
  * within the dbt project directory (or all .sql files if no project dir is
  * specified).
  */
-export function getChangedDBTModels(
-  ctx: PRContext,
-  dbtProjectDir?: string,
-): ChangedFile[] {
+export function getChangedDBTModels(ctx: PRContext, dbtProjectDir?: string): ChangedFile[] {
   if (!dbtProjectDir) return ctx.dbtFiles;
 
   // dbtProjectDir is absolute, filenames are relative — convert to relative
@@ -134,9 +117,7 @@ export function isInteractiveMention(triggers: string[]): boolean {
   const comment = github.context.payload.comment?.body ?? "";
   const lowerComment = comment.toLowerCase().trim();
 
-  return triggers.some((trigger) =>
-    lowerComment.startsWith(trigger.toLowerCase().trim()),
-  );
+  return triggers.some((trigger) => lowerComment.startsWith(trigger.toLowerCase().trim()));
 }
 
 /**

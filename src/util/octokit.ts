@@ -13,10 +13,7 @@ let _octokit: Octokit | null = null;
  * FIX 9: Retry helper for Octokit API calls.
  * Retries on 5xx and 429 errors with exponential backoff (1s, 2s, 4s).
  */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxRetries = 3,
-): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -24,15 +21,15 @@ async function withRetry<T>(
     } catch (err: unknown) {
       lastError = err;
       const status =
-        err && typeof err === "object" && "status" in err
-          ? (err as { status: number }).status
-          : 0;
+        err && typeof err === "object" && "status" in err ? (err as { status: number }).status : 0;
       const isRetryable = status === 429 || (status >= 500 && status < 600);
       if (!isRetryable || attempt === maxRetries - 1) {
         throw err;
       }
       const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-      core.debug(`Retrying API call in ${delay}ms (attempt ${attempt + 1}/${maxRetries}, status ${status})`);
+      core.debug(
+        `Retrying API call in ${delay}ms (attempt ${attempt + 1}/${maxRetries}, status ${status})`,
+      );
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
@@ -113,10 +110,7 @@ export async function getChangedFiles(prNumber: number): Promise<ChangedFile[]> 
 /**
  * Fetch the full content of a file at a specific git ref.
  */
-export async function getFileContent(
-  filePath: string,
-  ref: string,
-): Promise<string> {
+export async function getFileContent(filePath: string, ref: string): Promise<string> {
   const octokit = getOctokit();
   const { owner, repo } = getRepo();
 
@@ -143,10 +137,7 @@ export async function getFileContent(
  *
  * Returns the URL of the comment.
  */
-export async function postComment(
-  prNumber: number,
-  body: string,
-): Promise<string> {
+export async function postComment(prNumber: number, body: string): Promise<string> {
   const octokit = getOctokit();
   const { owner, repo } = getRepo();
   const markedBody = `${COMMENT_MARKER}\n${body}`;
@@ -168,9 +159,7 @@ export async function postComment(
       return response.data.html_url;
     } catch (err: unknown) {
       const status =
-        err && typeof err === "object" && "status" in err
-          ? (err as { status: number }).status
-          : 0;
+        err && typeof err === "object" && "status" in err ? (err as { status: number }).status : 0;
       if (status === 404) {
         core.debug("Existing comment was deleted — creating a new one");
       } else {
@@ -252,9 +241,7 @@ export async function postReviewComments(
 /**
  * Find the ID of an existing bot comment with our marker.
  */
-async function findExistingCommentId(
-  prNumber: number,
-): Promise<number | undefined> {
+async function findExistingCommentId(prNumber: number): Promise<number | undefined> {
   const octokit = getOctokit();
   const { owner, repo } = getRepo();
 
@@ -288,15 +275,10 @@ async function findExistingCommentId(
 
 /** Get the head SHA of the PR. */
 export function getHeadSHA(): string {
-  return (
-    github.context.payload.pull_request?.head?.sha ??
-    github.context.sha
-  );
+  return github.context.payload.pull_request?.head?.sha ?? github.context.sha;
 }
 
 /** Get the base ref (branch) of the PR. */
 export function getBaseRef(): string {
-  return (
-    github.context.payload.pull_request?.base?.ref ?? "main"
-  );
+  return github.context.payload.pull_request?.base?.ref ?? "main";
 }

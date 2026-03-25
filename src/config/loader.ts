@@ -2,13 +2,9 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import * as core from "@actions/core";
 import yaml from "js-yaml";
-import { Severity } from "../analysis/types.js";
-import type { CommentMode } from "../analysis/types.js";
+import { Severity, type CommentMode } from "../analysis/types.js";
 import { DEFAULT_CONFIG } from "./defaults.js";
-import type {
-  AltimateConfig,
-  Dialect,
-} from "./schema.js";
+import type { AltimateConfig, Dialect } from "./schema.js";
 
 /**
  * Parse YAML text into a plain object using js-yaml.
@@ -76,9 +72,7 @@ function validateRawConfig(raw: Record<string, unknown>): string[] {
       "severity_threshold" in sqlReview &&
       !VALID_SEVERITIES.has(sqlReview.severity_threshold as Severity)
     ) {
-      errors.push(
-        `Invalid sql_review.severity_threshold '${sqlReview.severity_threshold}'`,
-      );
+      errors.push(`Invalid sql_review.severity_threshold '${sqlReview.severity_threshold}'`);
     }
 
     const rules = sqlReview.rules as Record<string, unknown> | undefined;
@@ -87,9 +81,7 @@ function validateRawConfig(raw: Record<string, unknown>): string[] {
         if (typeof ruleVal === "object" && ruleVal !== null) {
           const r = ruleVal as Record<string, unknown>;
           if ("severity" in r && !VALID_SEVERITIES.has(r.severity as Severity)) {
-            errors.push(
-              `Invalid severity '${r.severity}' for rule '${name}'`,
-            );
+            errors.push(`Invalid severity '${r.severity}' for rule '${name}'`);
           }
         }
       }
@@ -178,9 +170,7 @@ function deepMerge<T extends Record<string, unknown>>(
 
     if (pVal === undefined || pVal === null) continue;
 
-    if (
-      Array.isArray(pVal)
-    ) {
+    if (Array.isArray(pVal)) {
       // Arrays in the user config replace defaults entirely
       (result as Record<string, unknown>)[key] = pVal;
     } else if (
