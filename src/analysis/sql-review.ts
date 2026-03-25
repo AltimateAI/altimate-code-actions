@@ -74,9 +74,9 @@ async function analyzeWithRuleEngine(
       severity: altimateConfig.sql_review.severity_threshold,
       dialect: altimateConfig.dialect !== "auto" ? altimateConfig.dialect : undefined,
     };
-    const issues = await runCheckCommand(files, options);
-    core.info(`CLI check found ${issues.length} issue(s) total`);
-    return issues;
+    const result = await runCheckCommand(files, options);
+    core.info(`CLI check found ${result.issues.length} issue(s) total`);
+    return result.issues;
   }
 
   // Fallback: built-in regex rules

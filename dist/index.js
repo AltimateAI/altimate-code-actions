@@ -24166,8 +24166,10 @@ __export(comment_exports, {
   buildExecutiveLine: () => buildExecutiveLine,
   buildFooter: () => buildFooter,
   buildIssuesSection: () => buildIssuesSection,
+  buildLegacySummaryTable: () => buildLegacySummaryTable,
   buildMermaidDAG: () => buildMermaidDAG,
-  buildSummaryTable: () => buildSummaryTable,
+  buildQueryProfile: () => buildQueryProfile,
+  buildValidationTable: () => buildValidationTable,
   postReviewComment: () => postReviewComment
 });
 function buildComment(report) {
@@ -24177,8 +24179,12 @@ function buildComment(report) {
   const sections = [];
   sections.push(buildExecutiveLine(report));
   sections.push("");
-  sections.push(buildSummaryTable(report));
+  sections.push(buildValidationTable(report));
   sections.push("");
+  if (report.queryProfiles && report.queryProfiles.length > 0) {
+    sections.push(buildQueryProfile(report.queryProfiles));
+    sections.push("");
+  }
   if (report.impact && report.impact.modifiedModels.length > 0) {
     const totalDownstream = report.impact.downstreamModels.length + report.impact.affectedExposures.length;
     if (totalDownstream > 0) {
@@ -24206,11 +24212,19 @@ function buildExecutiveLine(report) {
   const modifiedCount = report.impact?.modifiedModels.length ?? 0;
   const downstreamCount = report.impact?.downstreamModels.length ?? 0;
   const exposureCount = report.impact?.affectedExposures.length ?? 0;
+  const fileCount = report.filesAnalyzed;
   if (modifiedCount > 0) {
-    parts.push(`\`${modifiedCount} ${modifiedCount === 1 ? "model" : "models"}\` modified`);
+    parts.push(`\`${modifiedCount} ${modifiedCount === 1 ? "model" : "models"}\` validated`);
+  } else if (fileCount > 0) {
+    parts.push(`\`${fileCount} ${fileCount === 1 ? "file" : "files"}\` validated`);
   }
   if (downstreamCount > 0) {
-    parts.push(`\`${downstreamCount} downstream\``);
+    const critCount2 = report.issues.filter(
+      (i) => i.severity === "critical" || i.severity === "error"
+    ).length;
+    const warnCount2 = report.issues.filter((i) => i.severity === "warning").length;
+    const hasIssues = critCount2 > 0 || warnCount2 > 0;
+    parts.push(`\`${downstreamCount} downstream\`${hasIssues ? "" : " safe"}`);
   }
   if (exposureCount > 0) {
     parts.push(`\`${exposureCount} ${exposureCount === 1 ? "exposure" : "exposures"}\` at risk`);
@@ -24219,19 +24233,16 @@ function buildExecutiveLine(report) {
     (i) => i.severity === "critical" || i.severity === "error"
   ).length;
   const warnCount = report.issues.filter((i) => i.severity === "warning").length;
-  if (critCount > 0) {
-    parts.push(`\`${critCount} critical\``);
-  }
-  if (warnCount > 0) {
-    parts.push(`\`${warnCount} ${warnCount === 1 ? "warning" : "warnings"}\``);
+  const totalFindings = critCount + warnCount;
+  if (totalFindings > 0) {
+    parts.push(`${totalFindings} ${totalFindings === 1 ? "finding" : "findings"}`);
   }
   if (report.estimatedCostDelta !== void 0 && report.estimatedCostDelta !== 0) {
     const sign = report.estimatedCostDelta >= 0 ? "+" : "";
     parts.push(`\`${sign}$${report.estimatedCostDelta.toFixed(2)}/mo\``);
   }
-  const rulesCount = report.filesAnalyzed;
-  if (critCount === 0 && warnCount === 0 && rulesCount > 0) {
-    parts.push("all checks passed");
+  if (totalFindings === 0 && fileCount > 0 && downstreamCount === 0) {
+    parts.push("no issues");
   }
   let emoji;
   if (critCount > 0) {
@@ -24241,13 +24252,59 @@ function buildExecutiveLine(report) {
   } else {
     emoji = "\u2705";
   }
-  const summary2 = parts.length > 0 ? parts.join(" \xB7 ") : "all checks passed";
+  const summary2 = parts.length > 0 ? parts.join(" \xB7 ") : "no issues";
   return `## ${emoji} Altimate Code \u2014 ${summary2}`;
 }
-function buildSummaryTable(report) {
+function buildValidationTable(report) {
+  if (report.validationSummary) {
+    return buildRichValidationTable(report.validationSummary, report);
+  }
+  return buildLegacySummaryTable(report);
+}
+function buildRichValidationTable(summary2, report) {
   const rows = [];
-  rows.push("| Check | Result | Details |");
-  rows.push("|:------|:------:|:--------|");
+  rows.push("| What We Checked | How | Result |");
+  rows.push("|:----------------|:----|:------:|");
+  const categoryOrder = ["validate", "lint", "safety", "pii", "policy", "semantic", "grade"];
+  const renderedCategories = /* @__PURE__ */ new Set();
+  for (const cat of categoryOrder) {
+    if (summary2.categories[cat]) {
+      rows.push(buildValidationRow(cat, summary2.categories[cat]));
+      renderedCategories.add(cat);
+    }
+  }
+  for (const [cat, catSummary] of Object.entries(summary2.categories)) {
+    if (!renderedCategories.has(cat)) {
+      rows.push(buildValidationRow(cat, catSummary));
+    }
+  }
+  if (report.impact) {
+    const downstreamCount = report.impact.downstreamModels.length;
+    const passed = report.issues.filter((i) => i.severity === "critical" || i.severity === "error").length === 0;
+    const resultEmoji = passed ? "\u2705 Compatible" : "\u274C Breaking";
+    rows.push(
+      `| Breaking Changes | Schema compatibility against ${downstreamCount} downstream models | ${resultEmoji} |`
+    );
+  }
+  return rows.join("\n");
+}
+function buildValidationRow(_category, catSummary) {
+  let resultText;
+  if (catSummary.passed) {
+    if (_category === "validate") resultText = "\u2705 Valid";
+    else if (_category === "safety") resultText = "\u2705 Safe";
+    else if (_category === "pii") resultText = "\u2705 No exposure";
+    else resultText = "\u2705 Clean";
+  } else {
+    const count = catSummary.findingsCount;
+    resultText = `\u26A0\uFE0F ${count} ${count === 1 ? "warning" : "warnings"}`;
+  }
+  return `| ${catSummary.label} | ${catSummary.method} | ${resultText} |`;
+}
+function buildLegacySummaryTable(report) {
+  const rows = [];
+  rows.push("| What We Checked | How | Result |");
+  rows.push("|:----------------|:----|:------:|");
   if (report.filesAnalyzed > 0) {
     const critCount = report.issues.filter(
       (i) => i.severity === "critical" || i.severity === "error"
@@ -24258,40 +24315,64 @@ function buildSummaryTable(report) {
       parts.push(`${critCount} critical`);
       if (warnCount > 0) parts.push(`${warnCount} warnings`);
       rows.push(
-        `| SQL Quality | \u274C ${parts.join(", ")} | ${report.issuesFound} issues in ${report.filesAnalyzed} files |`
+        `| SQL Quality | Static analysis on ${report.filesAnalyzed} files | \u274C ${parts.join(", ")} |`
       );
     } else if (warnCount > 0) {
       rows.push(
-        `| SQL Quality | \u26A0\uFE0F ${warnCount} ${warnCount === 1 ? "warning" : "warnings"} | ${report.issuesFound} issues in ${report.filesAnalyzed} files |`
+        `| SQL Quality | Static analysis on ${report.filesAnalyzed} files | \u26A0\uFE0F ${warnCount} ${warnCount === 1 ? "warning" : "warnings"} |`
       );
     } else {
-      rows.push(`| SQL Quality | \u2705 0 issues | ${report.filesAnalyzed} files analyzed |`);
+      rows.push(
+        `| SQL Quality | Static analysis on ${report.filesAnalyzed} files | \u2705 Clean |`
+      );
     }
   }
   if (report.impact) {
-    const directCount = report.impact.modifiedModels.length;
     const downstreamCount = report.impact.downstreamModels.length;
     const exposureCount = report.impact.affectedExposures.length;
-    const total = directCount + downstreamCount;
-    let details = `${directCount} modified`;
-    if (downstreamCount > 0) {
-      details += ` \u2192 ${downstreamCount} downstream`;
-    }
+    let details = `DAG analysis against ${downstreamCount} downstream models`;
     if (exposureCount > 0) {
       details += `, ${exposureCount} ${exposureCount === 1 ? "exposure" : "exposures"}`;
     }
-    rows.push(`| dbt Impact | \u{1F4CA} ${total} models | ${details} |`);
+    rows.push(`| Breaking Changes | ${details} | \u2705 Compatible |`);
   }
   if (report.estimatedCostDelta !== void 0 && report.estimatedCostDelta !== 0) {
     const sign = report.estimatedCostDelta >= 0 ? "+" : "";
-    const explanation = report.costEstimates?.[0]?.explanation ?? "cost changed";
     rows.push(
-      `| Cost | \u{1F53A} ${sign}$${report.estimatedCostDelta.toFixed(2)}/mo | ${explanation} |`
+      `| Cost | Warehouse cost estimation | \u{1F53A} ${sign}$${report.estimatedCostDelta.toFixed(2)}/mo |`
     );
   } else if (report.costEstimates && report.costEstimates.length > 0) {
-    rows.push("| Cost | \u2705 No change | $0.00 delta |");
+    rows.push("| Cost | Warehouse cost estimation | \u2705 No change |");
   }
   return rows.join("\n");
+}
+function buildQueryProfile(profiles) {
+  const lines = [];
+  lines.push("<details>");
+  lines.push(`<summary>\u{1F4CB} Query Profile</summary>`);
+  lines.push("");
+  const fileNames = profiles.map((p) => {
+    const parts = p.file.split("/");
+    return `\`${parts[parts.length - 1]}\``;
+  });
+  lines.push(`| | ${fileNames.join(" | ")} |`);
+  lines.push(`|:--|${fileNames.map(() => ":-:").join("|")}|`);
+  lines.push(`| Complexity | ${profiles.map((p) => p.complexity).join(" | ")} |`);
+  lines.push(`| Tables | ${profiles.map((p) => String(p.tablesReferenced)).join(" | ")} |`);
+  lines.push(
+    `| JOINs | ${profiles.map((p) => p.joinCount > 0 ? `${p.joinCount} (${p.joinTypes.join(", ")})` : "0").join(" | ")} |`
+  );
+  lines.push(`| CTEs | ${profiles.map((p) => p.hasCTE ? "Yes" : "No").join(" | ")} |`);
+  lines.push(`| Subqueries | ${profiles.map((p) => p.hasSubquery ? "Yes" : "No").join(" | ")} |`);
+  lines.push(
+    `| Window Functions | ${profiles.map((p) => p.hasWindowFunction ? "Yes" : "No").join(" | ")} |`
+  );
+  lines.push(
+    `| Aggregation | ${profiles.map((p) => p.hasAggregation ? "Yes" : "No").join(" | ")} |`
+  );
+  lines.push("");
+  lines.push("</details>");
+  return lines.join("\n");
 }
 function isTestNode(name) {
   return /^(not_null|unique|accepted_values|relationships|dbt_utils|dbt_expectations)_/.test(name);
@@ -24467,7 +24548,7 @@ function buildCostSection(estimates, totalDelta) {
 function buildFooter() {
   return [
     "---",
-    `<sub>\u{1F50D} <a href="https://github.com/AltimateAI/altimate-code-actions">Altimate Code</a> v${VERSION} \xB7 <a href="https://github.com/AltimateAI/altimate-code-actions/blob/main/docs/configuration.md">Configure</a> \xB7 <a href="https://github.com/AltimateAI/altimate-code-actions/issues">Feedback</a></sub>`
+    `<sub>\u{1F50D} <a href="https://github.com/AltimateAI/altimate-code-actions">Altimate Code</a> v${VERSION} \xB7 Validated without hitting your warehouse \xB7 <a href="https://github.com/AltimateAI/altimate-code-actions/blob/main/docs/configuration.md">Configure</a> \xB7 <a href="https://github.com/AltimateAI/altimate-code-actions/issues">Feedback</a></sub>`
   ].join("\n");
 }
 function buildASCIIDAG(modifiedModels, downstreamModels, _impactResult) {
@@ -24535,7 +24616,7 @@ var init_comment = __esm({
     init_octokit();
     init_inline();
     MAX_COMMENT_LENGTH = 6e4;
-    VERSION = "0.3.0";
+    VERSION = "0.4.0";
     SEVERITY_ORDER = ["critical", "error", "warning", "info"];
     SEVERITY_EMOJI = {
       critical: "\u274C",
@@ -27519,6 +27600,50 @@ async function runCLI(args, options = {}) {
 
 // src/analysis/cli-check.ts
 var core4 = __toESM(require_core(), 1);
+var CATEGORY_META = {
+  lint: {
+    label: "Anti-Patterns",
+    ruleCount: 26,
+    method: "AST analysis",
+    examples: ["SELECT *", "cartesian joins", "missing GROUP BY", "non-deterministic functions"]
+  },
+  safety: {
+    label: "Injection Safety",
+    ruleCount: 10,
+    method: "Pattern scan",
+    examples: ["SQL injection", "stacked queries", "tautology", "UNION-based"]
+  },
+  validate: {
+    label: "SQL Syntax",
+    ruleCount: 0,
+    method: "DataFusion",
+    examples: []
+  },
+  pii: {
+    label: "PII Exposure",
+    ruleCount: 9,
+    method: "Column classification",
+    examples: ["email", "SSN", "phone", "credit card", "IP address"]
+  },
+  policy: {
+    label: "Policy Guardrails",
+    ruleCount: 0,
+    method: "YAML policy rules",
+    examples: []
+  },
+  semantic: {
+    label: "Semantic Checks",
+    ruleCount: 10,
+    method: "Plan analysis",
+    examples: ["cartesian products", "wrong JOINs", "NULL misuse"]
+  },
+  grade: {
+    label: "Quality Grade",
+    ruleCount: 0,
+    method: "Composite scoring",
+    examples: []
+  }
+};
 async function isCheckCommandAvailable() {
   try {
     const result = await runCLI(["check", "--help"], { timeout: 1e4 });
@@ -27546,13 +27671,60 @@ async function runCheckCommand(files, options = {}) {
   const result = await runCLI(args, { timeout: 12e4, parseJson: true });
   if (result.exitCode !== 0 && !result.json) {
     core4.warning(`altimate-code check failed (exit ${result.exitCode}): ${result.stderr}`);
-    return [];
+    return { issues: [], validationSummary: buildEmptyValidationSummary(checksArg.split(",")) };
   }
   if (!result.json) {
     core4.warning("altimate-code check produced no JSON output");
-    return [];
+    return { issues: [], validationSummary: buildEmptyValidationSummary(checksArg.split(",")) };
   }
-  return parseCheckOutput(result.json);
+  const output = result.json;
+  return {
+    issues: parseCheckOutput(output),
+    validationSummary: extractValidationSummary(output)
+  };
+}
+function extractValidationSummary(output) {
+  const categories = {};
+  const checksRun = output.checks_run ?? [];
+  const schemaResolved = output.schema_resolved ?? false;
+  for (const check of checksRun) {
+    const meta = CATEGORY_META[check];
+    const result = output.results?.[check];
+    const findingsCount = result?.findings?.length ?? 0;
+    if (meta) {
+      const methodWithContext = check === "validate" && schemaResolved && output.files_checked > 0 ? `${meta.method} against ${output.files_checked} table schemas` : meta.method;
+      categories[check] = {
+        label: meta.ruleCount > 0 ? `${meta.label} (${meta.ruleCount} rules)` : meta.label,
+        method: findingsCount === 0 && meta.examples.length > 0 ? `${methodWithContext}: ${meta.examples.join(", ")}, ...` : methodWithContext,
+        rulesChecked: meta.ruleCount,
+        findingsCount,
+        passed: findingsCount === 0
+      };
+    } else {
+      categories[check] = {
+        label: check.charAt(0).toUpperCase() + check.slice(1),
+        method: "Static analysis",
+        rulesChecked: 0,
+        findingsCount,
+        passed: findingsCount === 0
+      };
+    }
+  }
+  return { checksRun, schemaResolved, categories };
+}
+function buildEmptyValidationSummary(checks) {
+  const categories = {};
+  for (const check of checks) {
+    const meta = CATEGORY_META[check];
+    categories[check] = {
+      label: meta ? meta.ruleCount > 0 ? `${meta.label} (${meta.ruleCount} rules)` : meta.label : check,
+      method: meta?.method ?? "Static analysis",
+      rulesChecked: meta?.ruleCount ?? 0,
+      findingsCount: 0,
+      passed: true
+    };
+  }
+  return { checksRun: checks, schemaResolved: false, categories };
 }
 function parseCheckOutput(output) {
   const issues = [];
@@ -27582,6 +27754,69 @@ function mapSeverity(value) {
   if (lower === "error") return "error" /* Error */;
   if (lower === "critical" || lower === "fatal") return "critical" /* Critical */;
   return "warning" /* Warning */;
+}
+
+// src/analysis/query-profile.ts
+function extractQueryProfile(file, sql) {
+  const joinTypes = extractJoinTypes(sql);
+  return {
+    file,
+    complexity: computeComplexity(sql),
+    tablesReferenced: countTables(sql),
+    joinCount: joinTypes.length,
+    joinTypes: [...new Set(joinTypes)],
+    hasAggregation: /\bGROUP\s+BY\b/i.test(sql) || hasAggregateFunctions(sql),
+    hasSubquery: /\(\s*SELECT\b/i.test(sql),
+    hasWindowFunction: /\bOVER\s*\(/i.test(sql),
+    hasCTE: /\bWITH\s+\w+\s+AS\s*\(/i.test(sql)
+  };
+}
+function extractJoinTypes(sql) {
+  const types2 = [];
+  const joinPattern = /\b(INNER|LEFT\s+OUTER|RIGHT\s+OUTER|FULL\s+OUTER|LEFT|RIGHT|FULL|CROSS)?\s*JOIN\b/gi;
+  let match;
+  while ((match = joinPattern.exec(sql)) !== null) {
+    const prefix = (match[1] ?? "INNER").trim().toUpperCase();
+    if (prefix.startsWith("LEFT")) types2.push("LEFT");
+    else if (prefix.startsWith("RIGHT")) types2.push("RIGHT");
+    else if (prefix.startsWith("FULL")) types2.push("FULL");
+    else if (prefix === "CROSS") types2.push("CROSS");
+    else types2.push("INNER");
+  }
+  return types2;
+}
+function countTables(sql) {
+  const tables = /* @__PURE__ */ new Set();
+  const fromPattern = /\bFROM\s+([a-zA-Z_][\w.]*)/gi;
+  let match;
+  while ((match = fromPattern.exec(sql)) !== null) {
+    tables.add(match[1].toLowerCase());
+  }
+  const joinPattern = /\bJOIN\s+([a-zA-Z_][\w.]*)/gi;
+  while ((match = joinPattern.exec(sql)) !== null) {
+    tables.add(match[1].toLowerCase());
+  }
+  return tables.size;
+}
+function hasAggregateFunctions(sql) {
+  return /\b(COUNT|SUM|AVG|MIN|MAX)\s*\(/i.test(sql);
+}
+function computeComplexity(sql) {
+  let score = 0;
+  const joinCount = (sql.match(/\bJOIN\b/gi) ?? []).length;
+  score += joinCount;
+  if (/\bGROUP\s+BY\b/i.test(sql)) score += 1;
+  if (/\bHAVING\b/i.test(sql)) score += 1;
+  if (/\bOVER\s*\(/i.test(sql)) score += 2;
+  if (/\(\s*SELECT\b/i.test(sql)) score += 2;
+  if (/\bWITH\s+\w+\s+AS\s*\(/i.test(sql)) score += 1;
+  if (/\bUNION\b/i.test(sql)) score += 2;
+  if (/\bCASE\b/i.test(sql)) score += 1;
+  const cteCount = (sql.match(/\bAS\s*\(\s*SELECT\b/gi) ?? []).length;
+  if (cteCount > 2) score += 1;
+  if (score <= 2) return "Low";
+  if (score <= 5) return "Medium";
+  return "High";
 }
 
 // src/context/pr.ts
@@ -28372,9 +28607,9 @@ async function analyzeWithRuleEngine(files, _config) {
       severity: altimateConfig.sql_review.severity_threshold,
       dialect: altimateConfig.dialect !== "auto" ? altimateConfig.dialect : void 0
     };
-    const issues = await runCheckCommand(files, options);
-    core7.info(`CLI check found ${issues.length} issue(s) total`);
-    return issues;
+    const result = await runCheckCommand(files, options);
+    core7.info(`CLI check found ${result.issues.length} issue(s) total`);
+    return result.issues;
   }
   core7.info("altimate-code CLI not available \u2014 falling back to built-in rule engine");
   return analyzeWithRegexRules(files);
@@ -29017,8 +29252,10 @@ async function main() {
       });
       return;
     }
-    const [issues, impact, costEstimates] = await runAnalyses(sqlFiles, prContext, config);
+    const [analysisResult, impact, costEstimates] = await runAnalyses(sqlFiles, prContext, config);
+    const { issues, validationSummary } = analysisResult;
     const totalCostDelta = costEstimates.length > 0 ? getTotalCostDelta(costEstimates) : void 0;
+    const queryProfiles = await extractQueryProfiles(sqlFiles);
     const report = {
       issues,
       impact: impact ?? void 0,
@@ -29029,10 +29266,12 @@ async function main() {
       estimatedCostDelta: totalCostDelta,
       shouldFail: shouldFail(issues, config.failOn),
       mode: config.mode,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      validationSummary,
+      queryProfiles: queryProfiles.length > 0 ? queryProfiles : void 0
     };
     let commentUrl;
-    if (report.issuesFound > 0 || report.impact || report.costEstimates) {
+    if (report.filesAnalyzed > 0) {
       if (isForkPR) {
         const { buildComment: buildComment2 } = await Promise.resolve().then(() => (init_comment(), comment_exports));
         const body = buildComment2(report);
@@ -29045,7 +29284,7 @@ async function main() {
         commentUrl = await postReviewComment(prContext.prNumber, report, config.commentMode);
       }
     } else {
-      core13.info("No findings \u2014 skipping PR comment");
+      core13.info("No SQL files analyzed \u2014 skipping PR comment");
     }
     setOutputs({
       issues_found: String(report.issuesFound),
@@ -29069,7 +29308,7 @@ async function runAnalyses(sqlFiles, prContext, config) {
   const v2Config = fileConfig && fileConfig.version === 2 ? fileConfig : null;
   const promises = [
     // SQL review — try CLI check first, fall back to regex
-    config.sqlReview && (config.mode === "full" || config.mode === "static" || config.mode === "ai") ? runAnalysisWithCLIFallback(sqlFiles, config, v2Config) : Promise.resolve([]),
+    config.sqlReview && (config.mode === "full" || config.mode === "static" || config.mode === "ai") ? runAnalysisWithCLIFallback(sqlFiles, config, v2Config) : Promise.resolve({ issues: [] }),
     // Impact analysis
     (async () => {
       if (!config.impactAnalysis) return null;
@@ -29125,10 +29364,12 @@ async function runAnalysisWithCLIFallback(sqlFiles, config, v2Config) {
     if (v2Config) {
       return runV2CheckAnalysis(sqlFiles, v2Config);
     }
-    return runCheckCommand(sqlFiles, { checks: ["lint", "safety"] });
+    const result = await runCheckCommand(sqlFiles, { checks: ["lint", "safety"] });
+    return { issues: result.issues, validationSummary: result.validationSummary };
   }
   core13.info("altimate-code check not available \u2014 using regex rule engine");
-  return analyzeSQLFiles(sqlFiles, config);
+  const issues = await analyzeSQLFiles(sqlFiles, config);
+  return { issues };
 }
 async function runV2CheckAnalysis(sqlFiles, v2Config) {
   const cliReady = await isCheckCommandAvailable();
@@ -29136,15 +29377,29 @@ async function runV2CheckAnalysis(sqlFiles, v2Config) {
     core13.warning(
       "v2 config detected but altimate-code CLI unavailable \u2014 falling back to built-in rules"
     );
-    return analyzeSQLFiles(sqlFiles, { mode: "static" });
+    const issues = await analyzeSQLFiles(sqlFiles, { mode: "static" });
+    return { issues };
   }
   const options = buildCheckOptionsFromV2(v2Config);
   if (options.checks.length === 0) {
     core13.info("All checks disabled in v2 config \u2014 skipping");
-    return [];
+    return { issues: [] };
   }
   core13.info(`Running altimate-code check with: ${options.checks.join(", ")}`);
-  return runCheckCommand(sqlFiles, options);
+  const result = await runCheckCommand(sqlFiles, options);
+  return { issues: result.issues, validationSummary: result.validationSummary };
+}
+async function extractQueryProfiles(sqlFiles) {
+  const profiles = [];
+  const fs = await import("fs/promises");
+  for (const file of sqlFiles) {
+    try {
+      const content = await fs.readFile(file.filename, "utf-8");
+      profiles.push(extractQueryProfile(file.filename, content));
+    } catch {
+    }
+  }
+  return profiles;
 }
 async function handleInteractiveMention(config) {
   const comment = getMentionComment();

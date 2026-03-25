@@ -5,16 +5,19 @@ import {
   type SQLIssue,
   type ImpactResult,
   type CostEstimate,
+  type ValidationSummary,
+  type QueryProfile,
 } from "../../src/analysis/types.js";
 import {
   buildComment,
   buildASCIIDAG,
   buildExecutiveLine,
-  buildSummaryTable,
+  buildValidationTable,
   buildIssuesSection,
   buildMermaidDAG,
   buildCostSection,
   buildFooter,
+  buildQueryProfile,
 } from "../../src/reporting/comment.js";
 
 function makeReport(overrides: Partial<ReviewReport> = {}): ReviewReport {
@@ -38,7 +41,46 @@ function makeIssue(overrides: Partial<SQLIssue> = {}): SQLIssue {
   };
 }
 
-describe("Comment Builder v0.3", () => {
+function makeValidationSummary(overrides: Partial<ValidationSummary> = {}): ValidationSummary {
+  return {
+    checksRun: ["lint", "safety"],
+    schemaResolved: false,
+    categories: {
+      lint: {
+        label: "Anti-Patterns (26 rules)",
+        method: "AST analysis: SELECT *, cartesian joins, missing GROUP BY, ...",
+        rulesChecked: 26,
+        findingsCount: 0,
+        passed: true,
+      },
+      safety: {
+        label: "Injection Safety (10 rules)",
+        method: "Pattern scan: SQL injection, stacked queries, tautology, ...",
+        rulesChecked: 10,
+        findingsCount: 0,
+        passed: true,
+      },
+    },
+    ...overrides,
+  };
+}
+
+function makeQueryProfile(overrides: Partial<QueryProfile> = {}): QueryProfile {
+  return {
+    file: "models/staging/stg_orders.sql",
+    complexity: "Low",
+    tablesReferenced: 2,
+    joinCount: 1,
+    joinTypes: ["INNER"],
+    hasAggregation: false,
+    hasSubquery: false,
+    hasWindowFunction: false,
+    hasCTE: true,
+    ...overrides,
+  };
+}
+
+describe("Comment Builder v0.4", () => {
   // ---------------------------------------------------------------------------
   // buildComment
   // ---------------------------------------------------------------------------
@@ -49,19 +91,45 @@ describe("Comment Builder v0.3", () => {
       expect(buildComment(report)).toBeNull();
     });
 
-    it("builds a complete comment for a clean PR", () => {
+    it("builds a complete comment for a clean PR with validation summary", () => {
+      const report = makeReport({
+        filesAnalyzed: 3,
+        validationSummary: makeValidationSummary(),
+      });
+      const comment = buildComment(report)!;
+
+      expect(comment).toContain("## \u2705 Altimate Code");
+      expect(comment).toContain("validated");
+      expect(comment).toContain("| What We Checked | How | Result |");
+      expect(comment).toContain("Anti-Patterns");
+      expect(comment).toContain("Injection Safety");
+      expect(comment).toContain("Altimate Code");
+      expect(comment).toContain("Configure");
+      expect(comment).toContain("Feedback");
+      expect(comment).toContain("Validated without hitting your warehouse");
+    });
+
+    it("builds a comment for clean PR without validation summary (legacy)", () => {
       const report = makeReport({ filesAnalyzed: 3 });
       const comment = buildComment(report)!;
 
       expect(comment).toContain("## \u2705 Altimate Code");
-      expect(comment).toContain("all checks passed");
-      expect(comment).toContain("| Check | Result | Details |");
-      expect(comment).toContain("3 files analyzed");
-      expect(comment).toContain("Altimate Code");
-      expect(comment).toContain("Configure");
-      expect(comment).toContain("Feedback");
-      // Clean PR should NOT have collapsible sections
-      expect(comment).not.toContain("<details>");
+      expect(comment).toContain("| What We Checked | How | Result |");
+      expect(comment).toContain("SQL Quality");
+      expect(comment).toContain("3 files");
+    });
+
+    it("includes query profile when present", () => {
+      const report = makeReport({
+        filesAnalyzed: 1,
+        queryProfiles: [makeQueryProfile()],
+      });
+      const comment = buildComment(report)!;
+
+      expect(comment).toContain("Query Profile");
+      expect(comment).toContain("Complexity");
+      expect(comment).toContain("Low");
+      expect(comment).toContain("<details>");
     });
 
     it("builds a comment with warnings", () => {
@@ -71,11 +139,29 @@ describe("Comment Builder v0.3", () => {
           makeIssue({ severity: Severity.Warning, message: "Missing alias" }),
         ],
         issuesFound: 2,
+        validationSummary: makeValidationSummary({
+          categories: {
+            lint: {
+              label: "Anti-Patterns (26 rules)",
+              method: "AST analysis",
+              rulesChecked: 26,
+              findingsCount: 2,
+              passed: false,
+            },
+            safety: {
+              label: "Injection Safety (10 rules)",
+              method: "Pattern scan: SQL injection, stacked queries, tautology, ...",
+              rulesChecked: 10,
+              findingsCount: 0,
+              passed: true,
+            },
+          },
+        }),
       });
       const comment = buildComment(report)!;
 
       expect(comment).toContain("\u26A0\uFE0F Altimate Code");
-      expect(comment).toContain("`2 warnings`");
+      expect(comment).toContain("2 findings");
       expect(comment).toContain("SELECT * used");
       expect(comment).toContain("Missing alias");
       // Warnings should be collapsible
@@ -94,7 +180,6 @@ describe("Comment Builder v0.3", () => {
       const comment = buildComment(report)!;
 
       expect(comment).toContain("\u274C Altimate Code");
-      expect(comment).toContain("`1 critical`");
       expect(comment).toContain("Non-deterministic JOIN");
       // Critical issues should be in a ### heading, not <details>
       expect(comment).toContain("### \u274C 1 critical issue");
@@ -181,14 +266,45 @@ describe("Comment Builder v0.3", () => {
   // ---------------------------------------------------------------------------
 
   describe("buildExecutiveLine", () => {
-    it("shows pass for zero issues", () => {
+    it("shows 'validated' and 'no issues' for clean PR without impact", () => {
       const report = makeReport();
       const line = buildExecutiveLine(report);
       expect(line).toContain("## \u2705 Altimate Code");
-      expect(line).toContain("all checks passed");
+      expect(line).toContain("validated");
+      expect(line).toContain("no issues");
     });
 
-    it("shows warning count for warnings only", () => {
+    it("shows 'safe' for downstream when no issues", () => {
+      const report = makeReport({
+        impact: {
+          modifiedModels: ["stg_orders"],
+          downstreamModels: ["fct_revenue", "dim_customers"],
+          affectedExposures: [],
+          affectedTests: [],
+          impactScore: 30,
+        },
+      });
+      const line = buildExecutiveLine(report);
+      expect(line).toContain("`2 downstream` safe");
+    });
+
+    it("omits 'safe' for downstream when issues exist", () => {
+      const report = makeReport({
+        issues: [makeIssue({ severity: Severity.Warning })],
+        impact: {
+          modifiedModels: ["stg_orders"],
+          downstreamModels: ["fct_revenue"],
+          affectedExposures: [],
+          affectedTests: [],
+          impactScore: 30,
+        },
+      });
+      const line = buildExecutiveLine(report);
+      expect(line).toContain("`1 downstream`");
+      expect(line).not.toContain("safe");
+    });
+
+    it("shows finding count for warnings", () => {
       const report = makeReport({
         issues: [
           makeIssue({ severity: Severity.Warning }),
@@ -198,10 +314,10 @@ describe("Comment Builder v0.3", () => {
       });
       const line = buildExecutiveLine(report);
       expect(line).toContain("\u26A0\uFE0F");
-      expect(line).toContain("`2 warnings`");
+      expect(line).toContain("2 findings");
     });
 
-    it("shows critical count for errors/critical", () => {
+    it("shows finding count for critical issues", () => {
       const report = makeReport({
         issues: [
           makeIssue({ severity: Severity.Critical }),
@@ -210,15 +326,7 @@ describe("Comment Builder v0.3", () => {
       });
       const line = buildExecutiveLine(report);
       expect(line).toContain("\u274C");
-      expect(line).toContain("`2 critical`");
-    });
-
-    it("uses singular for 1 warning", () => {
-      const report = makeReport({
-        issues: [makeIssue({ severity: Severity.Warning })],
-      });
-      const line = buildExecutiveLine(report);
-      expect(line).toContain("`1 warning`");
+      expect(line).toContain("2 findings");
     });
 
     it("includes model and downstream counts when impact data exists", () => {
@@ -232,8 +340,8 @@ describe("Comment Builder v0.3", () => {
         },
       });
       const line = buildExecutiveLine(report);
-      expect(line).toContain("`2 models` modified");
-      expect(line).toContain("`3 downstream`");
+      expect(line).toContain("`2 models` validated");
+      expect(line).toContain("`3 downstream` safe");
     });
 
     it("includes cost delta when present", () => {
@@ -272,23 +380,92 @@ describe("Comment Builder v0.3", () => {
       const line = buildExecutiveLine(report);
       expect(line).toContain("\u00B7"); // middle dot separator
     });
+
+    it("falls back to file count when no impact data", () => {
+      const report = makeReport({ filesAnalyzed: 7 });
+      const line = buildExecutiveLine(report);
+      expect(line).toContain("`7 files` validated");
+    });
   });
 
   // ---------------------------------------------------------------------------
-  // buildSummaryTable
+  // buildValidationTable
   // ---------------------------------------------------------------------------
 
-  describe("buildSummaryTable", () => {
-    it("shows SQL Quality passed row", () => {
-      const report = makeReport({ filesAnalyzed: 3, issuesFound: 0 });
-      const table = buildSummaryTable(report);
+  describe("buildValidationTable", () => {
+    it("renders rich table when validation summary is present", () => {
+      const report = makeReport({
+        filesAnalyzed: 3,
+        validationSummary: makeValidationSummary(),
+      });
+      const table = buildValidationTable(report);
 
-      expect(table).toContain("| SQL Quality |");
-      expect(table).toContain("0 issues");
-      expect(table).toContain("3 files analyzed");
+      expect(table).toContain("| What We Checked | How | Result |");
+      expect(table).toContain("Anti-Patterns (26 rules)");
+      expect(table).toContain("AST analysis");
+      expect(table).toContain("Injection Safety (10 rules)");
+      expect(table).toContain("Pattern scan");
+      expect(table).toContain("\u2705 Clean");
+      expect(table).toContain("\u2705 Safe");
     });
 
-    it("shows dbt Impact row when impact data exists", () => {
+    it("shows warnings count when category has findings", () => {
+      const report = makeReport({
+        filesAnalyzed: 3,
+        validationSummary: makeValidationSummary({
+          categories: {
+            lint: {
+              label: "Anti-Patterns (26 rules)",
+              method: "AST analysis",
+              rulesChecked: 26,
+              findingsCount: 3,
+              passed: false,
+            },
+            safety: {
+              label: "Injection Safety (10 rules)",
+              method: "Pattern scan",
+              rulesChecked: 10,
+              findingsCount: 0,
+              passed: true,
+            },
+          },
+        }),
+      });
+      const table = buildValidationTable(report);
+
+      expect(table).toContain("\u26A0\uFE0F 3 warnings");
+      expect(table).toContain("\u2705 Safe");
+    });
+
+    it("includes Breaking Changes row when impact data exists", () => {
+      const report = makeReport({
+        filesAnalyzed: 1,
+        validationSummary: makeValidationSummary(),
+        impact: {
+          modifiedModels: ["stg_orders"],
+          downstreamModels: ["fct_revenue", "dim_customers"],
+          affectedExposures: [],
+          affectedTests: [],
+          impactScore: 30,
+        },
+      });
+      const table = buildValidationTable(report);
+
+      expect(table).toContain("Breaking Changes");
+      expect(table).toContain("2 downstream models");
+      expect(table).toContain("\u2705 Compatible");
+    });
+
+    it("falls back to legacy table when no validation summary", () => {
+      const report = makeReport({ filesAnalyzed: 3, issuesFound: 0 });
+      const table = buildValidationTable(report);
+
+      expect(table).toContain("| What We Checked | How | Result |");
+      expect(table).toContain("SQL Quality");
+      expect(table).toContain("3 files");
+    });
+
+    it("shows dbt Impact in legacy table when impact data exists", () => {
       const report = makeReport({
         impact: {
           modifiedModels: ["stg_orders"],
@@ -298,15 +475,13 @@ describe("Comment Builder v0.3", () => {
           impactScore: 50,
         },
       });
-      const table = buildSummaryTable(report);
+      const table = buildValidationTable(report);
 
-      expect(table).toContain("| dbt Impact |");
-      expect(table).toContain("3 models");
-      expect(table).toContain("1 modified");
-      expect(table).toContain("2 downstream");
+      expect(table).toContain("Breaking Changes");
+      expect(table).toContain("2 downstream models");
     });
 
-    it("shows Cost row with delta", () => {
+    it("shows Cost row with delta in legacy table", () => {
       const report = makeReport({
         estimatedCostDelta: 12.5,
         costEstimates: [
@@ -318,13 +493,13 @@ describe("Comment Builder v0.3", () => {
           },
         ],
       });
-      const table = buildSummaryTable(report);
+      const table = buildValidationTable(report);
 
-      expect(table).toContain("| Cost |");
+      expect(table).toContain("Cost");
       expect(table).toContain("+$12.50/mo");
     });
 
-    it("shows exposure count in dbt Impact details", () => {
+    it("shows exposure count in legacy table", () => {
       const report = makeReport({
         impact: {
           modifiedModels: ["stg_orders"],
@@ -334,18 +509,69 @@ describe("Comment Builder v0.3", () => {
           impactScore: 50,
         },
       });
-      const table = buildSummaryTable(report);
+      const table = buildValidationTable(report);
 
       expect(table).toContain("1 exposure");
     });
 
-    it("only shows rows for checks that were run", () => {
+    it("only shows rows for checks that were run (legacy)", () => {
       const report = makeReport({ filesAnalyzed: 1 });
-      const table = buildSummaryTable(report);
+      const table = buildValidationTable(report);
 
       expect(table).toContain("SQL Quality");
-      expect(table).not.toContain("dbt Impact");
-      expect(table).not.toContain("| Cost |");
+      expect(table).not.toContain("Breaking Changes");
+      expect(table).not.toContain("Cost");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // buildQueryProfile
+  // ---------------------------------------------------------------------------
+
+  describe("buildQueryProfile", () => {
+    it("renders a collapsible table with query metadata", () => {
+      const profiles = [makeQueryProfile()];
+      const section = buildQueryProfile(profiles);
+
+      expect(section).toContain("<details>");
+      expect(section).toContain("</details>");
+      expect(section).toContain("Query Profile");
+      expect(section).toContain("Complexity");
+      expect(section).toContain("Low");
+      expect(section).toContain("Tables");
+      expect(section).toContain("2");
+      expect(section).toContain("JOINs");
+      expect(section).toContain("1 (INNER)");
+      expect(section).toContain("CTEs");
+      expect(section).toContain("Yes");
+      expect(section).toContain("Aggregation");
+      expect(section).toContain("No");
+    });
+
+    it("handles multiple files in columns", () => {
+      const profiles = [
+        makeQueryProfile({ file: "models/stg_orders.sql", complexity: "Low" }),
+        makeQueryProfile({
+          file: "models/fct_revenue.sql",
+          complexity: "High",
+          joinCount: 3,
+          joinTypes: ["INNER", "LEFT"],
+          hasAggregation: true,
+          hasWindowFunction: true,
+        }),
+      ];
+      const section = buildQueryProfile(profiles);
+
+      expect(section).toContain("`stg_orders.sql`");
+      expect(section).toContain("`fct_revenue.sql`");
+      expect(section).toContain("High");
+      expect(section).toContain("3 (INNER, LEFT)");
+    });
+
+    it("shows 0 for joins when none present", () => {
+      const profiles = [makeQueryProfile({ joinCount: 0, joinTypes: [] })];
+      const section = buildQueryProfile(profiles);
+      expect(section).toContain("| 0 |");
     });
   });
 
@@ -685,7 +911,7 @@ describe("Comment Builder v0.3", () => {
       const dag = buildASCIIDAG(["stg_orders"], ["fct_revenue"], dummyImpact);
       expect(dag).toContain("stg_orders");
       expect(dag).toContain("fct_revenue");
-      expect(dag).toContain("\u2192"); // →
+      expect(dag).toContain("\u2192"); // ->
     });
 
     it("renders multiple children with tree branches", () => {
@@ -770,10 +996,11 @@ describe("Comment Builder v0.3", () => {
   // ---------------------------------------------------------------------------
 
   describe("buildFooter", () => {
-    it("includes version, configure link, and feedback link", () => {
+    it("includes version, zero-cost callout, configure link, and feedback link", () => {
       const footer = buildFooter();
 
-      expect(footer).toContain("v0.3.0");
+      expect(footer).toContain("v0.4.0");
+      expect(footer).toContain("Validated without hitting your warehouse");
       expect(footer).toContain("Configure");
       expect(footer).toContain("Feedback");
       expect(footer).toContain("Altimate Code");

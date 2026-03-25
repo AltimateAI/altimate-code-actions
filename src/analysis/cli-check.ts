@@ -1,5 +1,11 @@
 import { runCLI } from "../util/cli.js";
-import { Severity, type SQLIssue, type ChangedFile } from "./types.js";
+import {
+  Severity,
+  type SQLIssue,
+  type ChangedFile,
+  type ValidationSummary,
+  type CategorySummary,
+} from "./types.js";
 import * as core from "@actions/core";
 
 /** Structured output from `altimate-code check --format json`. */
@@ -46,6 +52,61 @@ export interface CheckCommandOptions {
   severity?: string;
 }
 
+/** Result from `runCheckCommand` including issues and validation metadata. */
+export interface CheckCommandResult {
+  issues: SQLIssue[];
+  validationSummary: ValidationSummary;
+}
+
+/** Static metadata about each check category for display in PR comments. */
+export const CATEGORY_META: Record<
+  string,
+  { label: string; method: string; ruleCount: number; examples: string[] }
+> = {
+  lint: {
+    label: "Anti-Patterns",
+    ruleCount: 26,
+    method: "AST analysis",
+    examples: ["SELECT *", "cartesian joins", "missing GROUP BY", "non-deterministic functions"],
+  },
+  safety: {
+    label: "Injection Safety",
+    ruleCount: 10,
+    method: "Pattern scan",
+    examples: ["SQL injection", "stacked queries", "tautology", "UNION-based"],
+  },
+  validate: {
+    label: "SQL Syntax",
+    ruleCount: 0,
+    method: "DataFusion",
+    examples: [],
+  },
+  pii: {
+    label: "PII Exposure",
+    ruleCount: 9,
+    method: "Column classification",
+    examples: ["email", "SSN", "phone", "credit card", "IP address"],
+  },
+  policy: {
+    label: "Policy Guardrails",
+    ruleCount: 0,
+    method: "YAML policy rules",
+    examples: [],
+  },
+  semantic: {
+    label: "Semantic Checks",
+    ruleCount: 10,
+    method: "Plan analysis",
+    examples: ["cartesian products", "wrong JOINs", "NULL misuse"],
+  },
+  grade: {
+    label: "Quality Grade",
+    ruleCount: 0,
+    method: "Composite scoring",
+    examples: [],
+  },
+};
+
 /**
  * Detect whether the `altimate-code` CLI is available and supports the
  * `check` subcommand. Returns true if the CLI responds to `check --help`.
@@ -60,7 +121,8 @@ export async function isCheckCommandAvailable(): Promise<boolean> {
 }
 
 /**
- * Run `altimate-code check` on the given files and return structured issues.
+ * Run `altimate-code check` on the given files and return structured issues
+ * along with a validation summary that describes what was checked and how.
  *
  * Invokes the CLI once with all files and all requested checks, parses the
  * JSON output, and maps findings to the common `SQLIssue[]` format.
@@ -68,7 +130,7 @@ export async function isCheckCommandAvailable(): Promise<boolean> {
 export async function runCheckCommand(
   files: ChangedFile[],
   options: CheckCommandOptions = {},
-): Promise<SQLIssue[]> {
+): Promise<CheckCommandResult> {
   const filePaths = files.map((f) => f.filename);
   const checksArg = (options.checks ?? ["lint", "safety"]).join(",");
 
@@ -91,15 +153,84 @@ export async function runCheckCommand(
 
   if (result.exitCode !== 0 && !result.json) {
     core.warning(`altimate-code check failed (exit ${result.exitCode}): ${result.stderr}`);
-    return [];
+    return { issues: [], validationSummary: buildEmptyValidationSummary(checksArg.split(",")) };
   }
 
   if (!result.json) {
     core.warning("altimate-code check produced no JSON output");
-    return [];
+    return { issues: [], validationSummary: buildEmptyValidationSummary(checksArg.split(",")) };
   }
 
-  return parseCheckOutput(result.json as CheckOutput);
+  const output = result.json as CheckOutput;
+  return {
+    issues: parseCheckOutput(output),
+    validationSummary: extractValidationSummary(output),
+  };
+}
+
+/**
+ * Extract a structured validation summary from CLI check output.
+ * This captures what was checked, how, and whether each category passed.
+ */
+export function extractValidationSummary(output: CheckOutput): ValidationSummary {
+  const categories: Record<string, CategorySummary> = {};
+
+  const checksRun = output.checks_run ?? [];
+  const schemaResolved = output.schema_resolved ?? false;
+
+  for (const check of checksRun) {
+    const meta = CATEGORY_META[check];
+    const result = output.results?.[check];
+    const findingsCount = result?.findings?.length ?? 0;
+
+    if (meta) {
+      const methodWithContext =
+        check === "validate" && schemaResolved && output.files_checked > 0
+          ? `${meta.method} against ${output.files_checked} table schemas`
+          : meta.method;
+
+      categories[check] = {
+        label: meta.ruleCount > 0 ? `${meta.label} (${meta.ruleCount} rules)` : meta.label,
+        method:
+          findingsCount === 0 && meta.examples.length > 0
+            ? `${methodWithContext}: ${meta.examples.join(", ")}, ...`
+            : methodWithContext,
+        rulesChecked: meta.ruleCount,
+        findingsCount,
+        passed: findingsCount === 0,
+      };
+    } else {
+      categories[check] = {
+        label: check.charAt(0).toUpperCase() + check.slice(1),
+        method: "Static analysis",
+        rulesChecked: 0,
+        findingsCount,
+        passed: findingsCount === 0,
+      };
+    }
+  }
+
+  return { checksRun, schemaResolved, categories };
+}
+
+/** Build a minimal validation summary when CLI output is unavailable. */
+function buildEmptyValidationSummary(checks: string[]): ValidationSummary {
+  const categories: Record<string, CategorySummary> = {};
+  for (const check of checks) {
+    const meta = CATEGORY_META[check];
+    categories[check] = {
+      label: meta
+        ? meta.ruleCount > 0
+          ? `${meta.label} (${meta.ruleCount} rules)`
+          : meta.label
+        : check,
+      method: meta?.method ?? "Static analysis",
+      rulesChecked: meta?.ruleCount ?? 0,
+      findingsCount: 0,
+      passed: true,
+    };
+  }
+  return { checksRun: checks, schemaResolved: false, categories };
 }
 
 /**

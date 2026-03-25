@@ -66,6 +66,52 @@ export interface CostEstimate {
   explanation?: string;
 }
 
+/** Summary of what was validated across all check categories. */
+export interface ValidationSummary {
+  /** List of check categories that were executed. */
+  checksRun: string[];
+  /** Whether table schemas were resolved for SQL validation. */
+  schemaResolved: boolean;
+  /** Per-category validation metadata. */
+  categories: Record<string, CategorySummary>;
+}
+
+/** Metadata for a single check category (e.g. lint, safety, pii). */
+export interface CategorySummary {
+  /** Display label, e.g. "Anti-Patterns (26 rules)". */
+  label: string;
+  /** Technology/method used, e.g. "AST analysis: SELECT *, cartesian joins, ...". */
+  method: string;
+  /** Number of rules checked in this category. */
+  rulesChecked: number;
+  /** Number of findings produced. */
+  findingsCount: number;
+  /** Whether this category passed (zero findings). */
+  passed: boolean;
+}
+
+/** Structural metadata extracted from a SQL file. */
+export interface QueryProfile {
+  /** Relative file path. */
+  file: string;
+  /** Estimated complexity bucket. */
+  complexity: "Low" | "Medium" | "High";
+  /** Number of tables/sources referenced. */
+  tablesReferenced: number;
+  /** Number of JOIN clauses. */
+  joinCount: number;
+  /** Types of JOINs used (e.g. ["INNER", "LEFT"]). */
+  joinTypes: string[];
+  /** Whether the query uses GROUP BY / aggregate functions. */
+  hasAggregation: boolean;
+  /** Whether the query contains a subquery. */
+  hasSubquery: boolean;
+  /** Whether the query uses window functions (OVER). */
+  hasWindowFunction: boolean;
+  /** Whether the query uses CTEs (WITH ... AS). */
+  hasCTE: boolean;
+}
+
 /** Aggregated review report for the entire PR. */
 export interface ReviewReport {
   /** All SQL issues found across files. */
@@ -88,6 +134,10 @@ export interface ReviewReport {
   mode: ReviewMode;
   /** Timestamp of the analysis. */
   timestamp: string;
+  /** Structured validation summary from CLI check output. */
+  validationSummary?: ValidationSummary;
+  /** Query structure profiles extracted from SQL content. */
+  queryProfiles?: QueryProfile[];
 }
 
 /** Parsed input configuration for the action. */
