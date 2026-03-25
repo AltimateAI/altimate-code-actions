@@ -122,15 +122,15 @@ function detectMissingPartition(sql: string, file: string): SQLIssue[] {
 }
 
 function detectNonDeterministic(sql: string, file: string): SQLIssue[] {
-  // Match with or without parens: CURRENT_DATE, CURRENT_DATE(), NOW(), etc.
+  // Match with or without parens: CURRENT_DATE, NOW(), GENERATE_UUID(), RAND(), etc.
   return findAllMatches(
     sql,
     file,
-    /\b(CURRENT_DATE|CURRENT_TIMESTAMP|NOW|GETDATE|SYSDATE|SYSTIMESTAMP)\b(\s*\(\s*\))?/i,
+    /\b(CURRENT_DATE|CURRENT_TIMESTAMP|NOW|GETDATE|SYSDATE|SYSTIMESTAMP|GENERATE_UUID|UUID|NEWID|RANDOM|RAND|SYS_GUID)\b(\s*\(\s*\))?/i,
     "non_deterministic",
     "Non-deterministic function detected — results will vary between runs. Consider parameterizing.",
     Severity.Warning,
-    "Replace with a parameterized date variable or a macro argument, e.g. WHERE created_at > {{ run_date }}",
+    "Replace with a parameterized value or a macro argument, e.g. pass a variable instead of calling a non-deterministic function",
   );
 }
 

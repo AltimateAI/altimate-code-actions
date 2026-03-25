@@ -27782,11 +27782,11 @@ function detectNonDeterministic(sql, file) {
   return findAllMatches(
     sql,
     file,
-    /\b(CURRENT_DATE|CURRENT_TIMESTAMP|NOW|GETDATE|SYSDATE|SYSTIMESTAMP)\b(\s*\(\s*\))?/i,
+    /\b(CURRENT_DATE|CURRENT_TIMESTAMP|NOW|GETDATE|SYSDATE|SYSTIMESTAMP|GENERATE_UUID|UUID|NEWID|RANDOM|RAND|SYS_GUID)\b(\s*\(\s*\))?/i,
     "non_deterministic",
     "Non-deterministic function detected \u2014 results will vary between runs. Consider parameterizing.",
     "warning" /* Warning */,
-    "Replace with a parameterized date variable or a macro argument, e.g. WHERE created_at > {{ run_date }}"
+    "Replace with a parameterized value or a macro argument, e.g. pass a variable instead of calling a non-deterministic function"
   );
 }
 function detectCorrelatedSubquery(sql, file) {
@@ -29066,10 +29066,10 @@ async function main() {
 }
 async function runAnalyses(sqlFiles, prContext, config) {
   const fileConfig = config.fileConfig;
-  const isV2 = fileConfig && fileConfig.version === 2;
+  const v2Config = fileConfig && fileConfig.version === 2 ? fileConfig : null;
   const promises = [
-    // SQL review
-    config.sqlReview && (config.mode === "full" || config.mode === "static" || config.mode === "ai") ? isV2 ? runV2CheckAnalysis(sqlFiles, fileConfig) : analyzeSQLFiles(sqlFiles, config) : Promise.resolve([]),
+    // SQL review — try CLI check first, fall back to regex
+    config.sqlReview && (config.mode === "full" || config.mode === "static" || config.mode === "ai") ? runAnalysisWithCLIFallback(sqlFiles, config, v2Config) : Promise.resolve([]),
     // Impact analysis
     (async () => {
       if (!config.impactAnalysis) return null;
@@ -29117,6 +29117,18 @@ async function runAnalyses(sqlFiles, prContext, config) {
     config.costEstimation ? estimateCost(sqlFiles, config) : Promise.resolve([])
   ];
   return Promise.all(promises);
+}
+async function runAnalysisWithCLIFallback(sqlFiles, config, v2Config) {
+  const cliReady = await isCheckCommandAvailable();
+  if (cliReady) {
+    core13.info("altimate-code check command available \u2014 using AST-based analysis");
+    if (v2Config) {
+      return runV2CheckAnalysis(sqlFiles, v2Config);
+    }
+    return runCheckCommand(sqlFiles, { checks: ["lint", "safety"] });
+  }
+  core13.info("altimate-code check not available \u2014 using regex rule engine");
+  return analyzeSQLFiles(sqlFiles, config);
 }
 async function runV2CheckAnalysis(sqlFiles, v2Config) {
   const cliReady = await isCheckCommandAvailable();
