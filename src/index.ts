@@ -170,9 +170,10 @@ async function runAnalyses(
   // Always try `altimate-code check` first (deterministic, no LLM).
   // Falls back to regex rules if CLI unavailable.
   const fileConfig = (config as ActionConfig & { fileConfig?: AltimateConfig }).fileConfig;
-  const v2Config = fileConfig && (fileConfig as unknown as { version: number }).version === 2
-    ? (fileConfig as unknown as AltimateConfigV2)
-    : null;
+  const v2Config =
+    fileConfig && (fileConfig as unknown as { version: number }).version === 2
+      ? (fileConfig as unknown as AltimateConfigV2)
+      : null;
 
   const promises: [Promise<SQLIssue[]>, Promise<ImpactResult | null>, Promise<CostEstimate[]>] = [
     // SQL review — try CLI check first, fall back to regex
